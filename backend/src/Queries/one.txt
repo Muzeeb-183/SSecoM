@@ -1,0 +1,13 @@
+-- -- Create Users table for SSecoM Student Ecommerce Platform
+-- CREATE TABLE Users (
+--     id NVARCHAR(50) PRIMARY KEY,           -- Google ID from 'sub' claim
+--     email NVARCHAR(255) UNIQUE NOT NULL,  -- User email
+--     name NVARCHAR(255) NOT NULL,          -- Full name
+--     picture NVARCHAR(500),                -- Profile picture URL
+--     createdAt DATETIME2 DEFAULT GETDATE(),-- Account creation timestamp
+--     lastLoginAt DATETIME2 DEFAULT GETDATE(),-- Last login timestamp
+--     isActive BIT DEFAULT 1                 -- Account status
+-- );
+
+-- -- Verify table creation
+-- SELECT * FROM Users;

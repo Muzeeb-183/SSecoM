@@ -1,0 +1,28 @@
+# Development-specific Dockerfile for backend
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install dependencies for better caching
+COPY package*.json ./
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Expose backend port
+EXPOSE 5000
+
+# Set environment for development
+ENV NODE_ENV=development
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Health check for development
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:5000/api/health || exit 1
+
+# Development command with nodemon and TypeScript
+CMD ["npm", "run", "dev"]

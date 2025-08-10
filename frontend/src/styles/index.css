@@ -1,0 +1,34 @@
+/* Import Google Fonts FIRST - before everything else */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700;800&display=swap');
+
+/* Import Tailwind CSS directives FIRST */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base styles for student-focused design */
+@layer base {
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    line-height: 1.6;
+    color: theme('colors.body-text');
+    background-color: theme('colors.content-bg');
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Poppins', system-ui, -apple-system, sans-serif;
+    font-weight: 600;
+    color: theme('colors.heading');
+  }
+}
+
+/* Custom component styles */
+@layer components {
+  .btn-primary {
+    @apply bg-button-primary hover:bg-button-hover text-button-text font-medium py-2 px-4 rounded-lg transition-colors duration-200 shadow-student;
+  }
+  
+  .card-student {
+    @apply bg-card-bg border border-border-light rounded-lg shadow-student hover:shadow-card-hover transition-shadow duration-200;
+  }
+}

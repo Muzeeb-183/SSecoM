@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  backend-dev:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: ssecom-backend-dev
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app
+      - backend_node_modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - JWT_SECRET=${JWT_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - FRONTEND_URL=http://localhost:3000
+    networks:
+      - ssecom-dev-network
+    restart: unless-stopped
+
+  frontend-dev:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: ssecom-frontend-dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:5000
+      - VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+    depends_on:
+      - backend-dev
+    networks:
+      - ssecom-dev-network
+    restart: unless-stopped
+    # Add this to prevent endless restart loop
+    deploy:
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+
+volumes:
+  backend_node_modules:
+  frontend_node_modules:
+
+networks:
+  ssecom-dev-network:
+    driver: bridge
