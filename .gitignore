@@ -1,0 +1,41 @@
+# --- Node dependencies ---
+node_modules/
+
+# --- Build outputs ---
+dist/
+build/
+
+# --- Environment variables (sensitive info) ---
+*.env
+.env*
+
+# --- Logs ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# --- OS-specific ---
+.DS_Store
+Thumbs.db
+
+# --- Editor-specific ---
+.vscode/
+.idea/
+*.swp
+
+# --- TypeScript build outputs ---
+*.tsbuildinfo
+
+# --- Temporary files ---
+tmp/
+temp/
+*.tmp
+
+# --- Vite cache ---
+frontend/.vite/
+frontend/.cache/
+
+# --- Optional: keep only source code ---
+frontend/public/vite.svg
