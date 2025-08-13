@@ -14,7 +14,7 @@ if (!container) {
 // Get Google Client ID from environment
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
-// Debug logging - add this temporarily
+// Debug logging
 console.log('🔍 Environment Debug:');
 console.log('VITE_GOOGLE_CLIENT_ID:', googleClientId);
 console.log('VITE_API_URL:', import.meta.env.VITE_API_URL);
@@ -28,15 +28,13 @@ if (!googleClientId) {
 // Create React root
 const root = ReactDOM.createRoot(container);
 
-// Render the application with Google OAuth Provider
+// Render WITHOUT React.StrictMode to prevent double execution
 root.render(
-  <React.StrictMode>
-    <GoogleOAuthProvider clientId={googleClientId || ''}>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </GoogleOAuthProvider>
-  </React.StrictMode>
+  <GoogleOAuthProvider clientId={googleClientId || ''}>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </GoogleOAuthProvider>
 );
 
 // Performance monitoring for student experience

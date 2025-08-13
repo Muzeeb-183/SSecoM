@@ -5,11 +5,13 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-i
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '30d';
 
+// Updated JWTPayload interface with role support for admin system
 export interface JWTPayload {
   userId: string;
   email: string;
   name: string;
   picture?: string;
+  role: string; // Added role field for admin system
   universityDomain?: string;
 }
 
@@ -40,7 +42,7 @@ export const generateRefreshToken = (userId: string): string => {
 };
 
 /**
- * Verify and decode JWT token
+ * Verify and decode JWT token with role support
  */
 export const verifyToken = (token: string): JWTPayload => {
   try {
@@ -49,12 +51,13 @@ export const verifyToken = (token: string): JWTPayload => {
       audience: 'ssecom-frontend'
     }) as JwtPayload & JWTPayload;
 
-    // Ensure we return the correct interface
+    // Ensure we return the correct interface with role support
     return {
       userId: decoded.userId,
       email: decoded.email,
       name: decoded.name,
       picture: decoded.picture,
+      role: decoded.role || 'user', // Default to 'user' if role is missing (backwards compatibility)
       universityDomain: decoded.universityDomain
     };
   } catch (error) {

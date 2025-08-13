@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
-// User interface for authenticated students
+// Updated User interface with role support (keeping it simple)
 export interface User {
   id: string;
   email: string;
   name: string;
   picture: string;
+  role: string; // Added for admin system
   isUniversityStudent: boolean;
   universityDomain?: string;
 }
@@ -16,10 +17,13 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  isAdmin: boolean; // Added for admin check
   login: (credential: string) => Promise<void>;
   logout: () => void;
   refreshToken: () => Promise<boolean>;
   updateProfile: (updates: Partial<User>) => void;
+  grantAdminAccess: (email: string) => Promise<boolean>; // Admin management
+  revokeAdminAccess: (email: string) => Promise<boolean>; // Admin management
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -30,7 +34,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Check for existing authentication on app startup
+  // Helper to check if current user is admin
+  const isAdmin = user?.role === 'admin';
+
+  // Helper function to clear auth data
+  const clearAuthData = () => {
+    console.log('🧹 Clearing authentication data...');
+    localStorage.removeItem('ssecom_token');
+    localStorage.removeItem('ssecom_user');
+    setToken(null);
+    setUser(null);
+    console.log('✅ Authentication data cleared');
+  };
+
+  // SIMPLE: Back to the working version's auth check
   useEffect(() => {
     const checkExistingAuth = async () => {
       try {
@@ -53,10 +70,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           if (response.ok) {
             const data = await response.json();
             console.log('✅ Token verified successfully, restoring session');
+            console.log('👑 User role:', data.user.role);
             
             setToken(savedToken);
-            setUser(JSON.parse(savedUser));
-            console.log('✅ Existing authentication restored for:', JSON.parse(savedUser).email);
+            setUser(data.user); // Use fresh user data from backend (includes role)
+            console.log('✅ Existing authentication restored for:', data.user.email);
           } else {
             console.log('❌ Token verification failed:', response.status, response.statusText);
             
@@ -77,17 +95,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     checkExistingAuth();
-  }, []);
+  }, []); // Simple empty dependency array - no complex state tracking
 
-  // Helper function to clear auth data
-  const clearAuthData = () => {
-    localStorage.removeItem('ssecom_token');
-    localStorage.removeItem('ssecom_user');
-    setToken(null);
-    setUser(null);
-  };
-
-  // Login with Google OAuth
+  // SIMPLE: Back to the working version's login
   const login = async (credential: string) => {
     try {
       setIsLoading(true);
@@ -102,6 +112,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
 
       const data = await response.json();
+      console.log('📡 Login response received');
 
       if (!response.ok) {
         throw new Error(data.error || `Authentication failed: ${response.status}`);
@@ -109,6 +120,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       if (data.success) {
         console.log('✅ Authentication successful, saving session data');
+        console.log('👑 User role:', data.user.role);
         
         // Save authentication data
         setToken(data.token);
@@ -119,6 +131,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         localStorage.setItem('ssecom_user', JSON.stringify(data.user));
         
         console.log('🎓 Student authenticated and session saved:', data.user.email);
+        
+        // Log admin status
+        if (data.user.role === 'admin') {
+          console.log('👑 Admin access granted for platform management');
+        }
       } else {
         throw new Error(data.error || 'Authentication failed');
       }
@@ -207,15 +224,82 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  // Grant admin access to a user (admin only)
+  const grantAdminAccess = async (email: string): Promise<boolean> => {
+    try {
+      if (!token || !isAdmin) {
+        throw new Error('Admin access required');
+      }
+
+      console.log('👑 Granting admin access to:', email);
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/grant-admin`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        console.log('✅ Admin access granted to:', email);
+        return true;
+      } else {
+        throw new Error(data.error || 'Failed to grant admin access');
+      }
+    } catch (error) {
+      console.error('❌ Grant admin failed:', error);
+      throw error;
+    }
+  };
+
+  // Revoke admin access from a user (admin only)
+  const revokeAdminAccess = async (email: string): Promise<boolean> => {
+    try {
+      if (!token || !isAdmin) {
+        throw new Error('Admin access required');
+      }
+
+      console.log('👤 Revoking admin access from:', email);
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/revoke-admin`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        console.log('✅ Admin access revoked from:', email);
+        return true;
+      } else {
+        throw new Error(data.error || 'Failed to revoke admin access');
+      }
+    } catch (error) {
+      console.error('❌ Revoke admin failed:', error);
+      throw error;
+    }
+  };
+
   const value: AuthContextType = {
     user,
     token,
     isLoading,
     isAuthenticated: !!user && !!token,
+    isAdmin, // Helper property for admin check
     login,
     logout,
     refreshToken,
-    updateProfile
+    updateProfile,
+    grantAdminAccess,
+    revokeAdminAccess
   };
 
   return (

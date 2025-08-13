@@ -1,13 +1,63 @@
 -- -- Create Users table for SSecoM Student Ecommerce Platform
--- CREATE TABLE Users (
---     id NVARCHAR(50) PRIMARY KEY,           -- Google ID from 'sub' claim
---     email NVARCHAR(255) UNIQUE NOT NULL,  -- User email
---     name NVARCHAR(255) NOT NULL,          -- Full name
---     picture NVARCHAR(500),                -- Profile picture URL
---     createdAt DATETIME2 DEFAULT GETDATE(),-- Account creation timestamp
---     lastLoginAt DATETIME2 DEFAULT GETDATE(),-- Last login timestamp
---     isActive BIT DEFAULT 1                 -- Account status
--- );
+ CREATE TABLE Users (
+     id NVARCHAR(50) PRIMARY KEY,           -- Google ID from 'sub' claim
+     email NVARCHAR(255) UNIQUE NOT NULL,  -- User email
+     name NVARCHAR(255) NOT NULL,          -- Full name
+     picture NVARCHAR(500),                -- Profile picture URL
+     createdAt DATETIME2 DEFAULT GETDATE(),-- Account creation timestamp
+     lastLoginAt DATETIME2 DEFAULT GETDATE(),-- Last login timestamp
+     isActive BIT DEFAULT 1                 -- Account status
+ );
 
 -- -- Verify table creation
--- SELECT * FROM Users;
+ SELECT * FROM Users;
+
+
+
+-- Categories table
+CREATE TABLE Categories (
+    id NVARCHAR(50) PRIMARY KEY DEFAULT NEWID(),
+    name NVARCHAR(255) NOT NULL,
+    description NVARCHAR(500),
+    slug NVARCHAR(255) UNIQUE,
+    status NVARCHAR(20) DEFAULT 'active',
+    createdAt DATETIME DEFAULT GETDATE(),
+    updatedAt DATETIME DEFAULT GETDATE()
+);
+
+-- Products table  
+CREATE TABLE Products (
+    id NVARCHAR(50) PRIMARY KEY DEFAULT NEWID(),
+    categoryId NVARCHAR(50) NOT NULL,
+    name NVARCHAR(255) NOT NULL,
+    description NVARCHAR(MAX),
+    price DECIMAL(10, 2) NOT NULL,
+    originalPrice DECIMAL(10, 2),
+    affiliateLink NVARCHAR(500) NOT NULL,
+    imageUrl NVARCHAR(500),
+    tags NVARCHAR(500),
+    status NVARCHAR(20) DEFAULT 'active',
+    createdAt DATETIME DEFAULT GETDATE(),
+    updatedAt DATETIME DEFAULT GETDATE(),
+    FOREIGN KEY (categoryId) REFERENCES Categories(id)
+);
+
+
+-- Run this in your SQL Server Management Studio or database client:
+ALTER TABLE Products 
+ALTER COLUMN affiliateLink NVARCHAR(MAX);
+
+ALTER TABLE Products 
+ALTER COLUMN imageUrl NVARCHAR(MAX);
+
+-- Optional: Also increase tags if needed
+ALTER TABLE Products 
+ALTER COLUMN tags NVARCHAR(MAX);
+
+
+for buttons and  images(3)
+
+-- Add new columns for enhanced product features
+ALTER TABLE Products 
+ADD images NVARCHAR(MAX),
+    buttons NVARCHAR(MAX);
