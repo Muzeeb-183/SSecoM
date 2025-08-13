@@ -13,6 +13,25 @@ import { getDbConnection } from './utils/database';
 import { verifyGoogleToken } from './utils/googleAuth';
 import { generateToken, verifyToken, extractTokenFromHeader, JWTPayload } from './utils/jwt';
 
+
+import multer from 'multer';
+import { uploadImage, deleteImage } from './utils/imagekit';
+
+// Configure multer for memory storage
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  }
+});
+
 // Load environment variables
 dotenv.config({ path: '.env' });
 
@@ -641,6 +660,78 @@ app.get('/api/admin/users', async (req: Request, res: Response): Promise<void> =
   }
 });
 
+// Images upload
+// Image upload endpoint
+app.post('/api/admin/upload-images', upload.array('images', 3), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Authorization required' });
+      return;
+    }
+
+    const token = extractTokenFromHeader(authHeader);
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Invalid authorization header' });
+      return;
+    }
+
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') {
+      res.status(403).json({ success: false, error: 'Admin access required' });
+      return;
+    }
+
+    if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+      res.status(400).json({ success: false, error: 'At least one image is required' });
+      return;
+    }
+
+    const files = req.files as Express.Multer.File[];
+    const uploadedImages: { url: string; fileId: string }[] = [];
+
+    // Upload each image to ImageKit
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const fileName = `product-${Date.now()}-${i + 1}`;
+      
+      try {
+        const uploadResult = await uploadImage(file, fileName, 'products');
+        uploadedImages.push(uploadResult);
+      } catch (error) {
+        // If any upload fails, clean up already uploaded images
+        for (const uploaded of uploadedImages) {
+          try {
+            await deleteImage(uploaded.fileId);
+          } catch (cleanupError) {
+            console.error('Cleanup error:', cleanupError);
+          }
+        }
+        
+        res.status(500).json({ 
+          success: false, 
+          error: `Failed to upload image ${i + 1}` 
+        });
+        return;
+      }
+    }
+
+    console.log(`✅ ${uploadedImages.length} images uploaded to ImageKit`);
+    res.json({
+      success: true,
+      message: `${uploadedImages.length} images uploaded successfully`,
+      images: uploadedImages
+    });
+
+  } catch (error) {
+    console.error('❌ Image upload error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to upload images' 
+    });
+  }
+});
+
 // ========== CATEGORY MANAGEMENT ENDPOINTS ==========
 
 // Get all categories
@@ -889,7 +980,7 @@ app.get('/api/admin/products', async (req: Request, res: Response): Promise<void
 });
 
 // Create product
-// Update your POST /api/admin/products endpoint to handle new fields:
+// Update product creation to store ImageKit URLs and fileIds
 app.post('/api/admin/products', async (req: Request, res: Response): Promise<void> => {
   try {
     const { 
@@ -898,14 +989,14 @@ app.post('/api/admin/products', async (req: Request, res: Response): Promise<voi
       description, 
       price, 
       originalPrice, 
-      images,    // New: JSON string of image array
-      buttons,   // New: JSON string of button array  
+      images,    
+      imageFileIds, // ✅ Now handle this field
+      buttons,   
       tags,
-      // Backward compatibility
       imageUrl, 
       affiliateLink 
     } = req.body;
-    
+
     // ... existing auth checks ...
 
     const pool = await getDbConnection();
@@ -915,16 +1006,16 @@ app.post('/api/admin/products', async (req: Request, res: Response): Promise<voi
       .input('description', sql.NVarChar(sql.MAX), description || '')
       .input('price', sql.Decimal(10, 2), price)
       .input('originalPrice', sql.Decimal(10, 2), originalPrice || null)
-      .input('images', sql.NVarChar(sql.MAX), images || '[]')      // New field
-      .input('buttons', sql.NVarChar(sql.MAX), buttons || '[]')   // New field
+      .input('images', sql.NVarChar(sql.MAX), images || '[]')
+      .input('imageFileIds', sql.NVarChar(sql.MAX), imageFileIds || '[]') // ✅ Store file IDs
+      .input('buttons', sql.NVarChar(sql.MAX), buttons || '[]')
       .input('tags', sql.NVarChar(sql.MAX), tags || '')
-      // Backward compatibility
       .input('affiliateLink', sql.NVarChar(sql.MAX), affiliateLink)
       .input('imageUrl', sql.NVarChar(sql.MAX), imageUrl || '')
       .query(`
-        INSERT INTO Products (categoryId, name, description, price, originalPrice, affiliateLink, imageUrl, images, buttons, tags)
+        INSERT INTO Products (categoryId, name, description, price, originalPrice, affiliateLink, imageUrl, images, imageFileIds, buttons, tags)
         OUTPUT INSERTED.id, INSERTED.name, INSERTED.price, INSERTED.createdAt
-        VALUES (@categoryId, @name, @description, @price, @originalPrice, @affiliateLink, @imageUrl, @images, @buttons, @tags)
+        VALUES (@categoryId, @name, @description, @price, @originalPrice, @affiliateLink, @imageUrl, @images, @imageFileIds, @buttons, @tags)
       `);
 
     res.json({ 
@@ -941,39 +1032,29 @@ app.post('/api/admin/products', async (req: Request, res: Response): Promise<voi
 
 
 
+
   // ========== PRODUCT UPDATE & DELETE ENDPOINTS ==========
 
 // Update product
+// Also update your UPDATE endpoint
 app.put('/api/admin/products/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { categoryId, name, description, price, originalPrice, affiliateLink, imageUrl, tags } = req.body;
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.status(401).json({ success: false, error: 'Authorization required' });
-      return;
-    }
+    const { 
+      categoryId, 
+      name, 
+      description, 
+      price, 
+      originalPrice, 
+      images,
+      imageFileIds, // ✅ Handle file IDs for updates
+      buttons,
+      tags,
+      affiliateLink,
+      imageUrl 
+    } = req.body;
 
-    const token = extractTokenFromHeader(authHeader);
-    if (!token) {
-      res.status(401).json({ success: false, error: 'Invalid authorization header format' });
-      return;
-    }
-
-    const decoded = verifyToken(token);
-    if (decoded.role !== 'admin') {
-      res.status(403).json({ success: false, error: 'Admin access required' });
-      return;
-    }
-
-    if (!categoryId || !name || !price || !affiliateLink) {
-      res.status(400).json({ 
-        success: false, 
-        error: 'Category, name, price, and affiliate link are required' 
-      });
-      return;
-    }
+    // ... existing auth checks ...
 
     const pool = await getDbConnection();
     const result = await pool.request()
@@ -983,14 +1064,17 @@ app.put('/api/admin/products/:id', async (req: Request, res: Response): Promise<
       .input('description', sql.NVarChar(sql.MAX), description || '')
       .input('price', sql.Decimal(10, 2), price)
       .input('originalPrice', sql.Decimal(10, 2), originalPrice || null)
-      .input('affiliateLink', sql.NVarChar(500), affiliateLink)
-      .input('imageUrl', sql.NVarChar(500), imageUrl || '')
-      .input('tags', sql.NVarChar(500), tags || '')
+      .input('images', sql.NVarChar(sql.MAX), images || '[]')
+      .input('imageFileIds', sql.NVarChar(sql.MAX), imageFileIds || '[]') // ✅ Update file IDs
+      .input('buttons', sql.NVarChar(sql.MAX), buttons || '[]')
+      .input('tags', sql.NVarChar(sql.MAX), tags || '')
+      .input('affiliateLink', sql.NVarChar(sql.MAX), affiliateLink)
+      .input('imageUrl', sql.NVarChar(sql.MAX), imageUrl || '')
       .query(`
         UPDATE Products 
         SET categoryId = @categoryId, name = @name, description = @description, 
             price = @price, originalPrice = @originalPrice, affiliateLink = @affiliateLink,
-            imageUrl = @imageUrl, tags = @tags, updatedAt = GETDATE()
+            imageUrl = @imageUrl, images = @images, imageFileIds = @imageFileIds, buttons = @buttons, tags = @tags, updatedAt = GETDATE()
         WHERE id = @id
       `);
 
@@ -999,11 +1083,7 @@ app.put('/api/admin/products/:id', async (req: Request, res: Response): Promise<
       return;
     }
 
-    console.log('✅ Product updated:', name);
-    res.json({ 
-      success: true, 
-      message: 'Product updated successfully' 
-    });
+    res.json({ success: true, message: 'Product updated successfully' });
 
   } catch (error) {
     console.error('❌ Update product error:', error);

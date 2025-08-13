@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
+import { getImageForContext } from '../utils/imageOptimization';
+
 
 interface Category {
   id: string;
@@ -32,20 +34,141 @@ interface ProductButton {
   link: string;
 }
 
+// ✅ Updated ProductFormData interface
 interface ProductFormData {
   categoryId: string;
   name: string;
   description: string;
   price: string;
   originalPrice: string;
-  image1: string; // Mandatory
-  image2: string; // Optional
-  image3: string; // Optional
-  button1: ProductButton; // Mandatory
-  button2: ProductButton; // Optional
-  button3: ProductButton; // Optional
+  uploadedImages: { url: string; fileId: string }[]; // New: Store uploaded image data
+  button1: ProductButton;
+  button2: ProductButton;
+  button3: ProductButton;
   tags: string;
 }
+
+// ✅ Updated ImageUploadSection component with token prop
+const ImageUploadSection: React.FC<{
+  uploadedImages: { url: string; fileId: string }[];
+  onImagesChange: (images: { url: string; fileId: string }[]) => void;
+  token: string; // Added token prop
+}> = ({ uploadedImages, onImagesChange, token }) => {
+  const [uploading, setUploading] = useState(false);
+
+  const handleFileUpload = async (files: FileList) => {
+    if (!files || files.length === 0) return;
+    
+    if (uploadedImages.length + files.length > 3) {
+      toast.error('Maximum 3 images allowed per product');
+      return;
+    }
+
+    setUploading(true);
+    const formData = new FormData();
+    
+    for (let i = 0; i < files.length; i++) {
+      formData.append('images', files[i]);
+    }
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/upload-images`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}` // ✅ Now accessible via props
+        },
+        body: formData
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        const newImages = [...uploadedImages, ...data.images];
+        onImagesChange(newImages);
+        toast.success(`${data.images.length} images uploaded successfully!`);
+      } else {
+        toast.error(data.error || 'Failed to upload images');
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      toast.error('Failed to upload images');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeImage = async (index: number) => {
+    const imageToRemove = uploadedImages[index];
+    
+    // Optionally delete from ImageKit (or keep for later cleanup)
+    const updatedImages = uploadedImages.filter((_, i) => i !== index);
+    onImagesChange(updatedImages);
+    toast.success('Image removed');
+  };
+
+  return (
+    <div className="bg-white rounded-lg p-4 border-l-4 border-indigo-500">
+      <h4 className="text-lg font-semibold text-gray-800 mb-4">📸 Product Images</h4>
+      
+      {/* Image Upload Area */}
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          🖼️ Upload Images <span className="text-red-500">* (1-3 images required)</span>
+        </label>
+        
+        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+          <input
+            type="file"
+            multiple
+            accept="image/*"
+            onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
+            className="hidden"
+            id="image-upload"
+            disabled={uploading || uploadedImages.length >= 3}
+          />
+          
+          <label 
+            htmlFor="image-upload" 
+            className={`cursor-pointer ${uploading || uploadedImages.length >= 3 ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            <div className="text-gray-400 mb-2">
+              {uploading ? '⏳ Uploading...' : '📁 Click to upload images'}
+            </div>
+            <div className="text-sm text-gray-500">
+              {uploadedImages.length}/3 images • PNG, JPG up to 5MB each
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* Uploaded Images Preview */}
+      {uploadedImages.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {uploadedImages.map((image, index) => (
+            <div key={index} className="relative">
+              <img
+                src={getImageForContext(image.url, 'thumbnail')} // ✅ Optimized thumbnails
+                alt={`Product ${index + 1}`}
+                className="w-full h-32 object-cover rounded-lg border"
+                loading="lazy"
+              />
+              <button
+                type="button"
+                onClick={() => removeImage(index)}
+                className="absolute top-2 right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-700"
+              >
+                ×
+              </button>
+              <div className="text-xs text-gray-500 mt-1">
+                Image {index + 1} {index === 0 && '(Main)'}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const ProductManagement: React.FC = () => {
   const { token } = useAuth();
@@ -62,7 +185,7 @@ const ProductManagement: React.FC = () => {
     description: ''
   });
 
-  // Enhanced Product form state
+  // ✅ Enhanced Product form state with correct structure
   const [showProductForm, setShowProductForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productForm, setProductForm] = useState<ProductFormData>({
@@ -71,9 +194,7 @@ const ProductManagement: React.FC = () => {
     description: '',
     price: '',
     originalPrice: '',
-    image1: '',
-    image2: '',
-    image3: '',
+    uploadedImages: [], // ✅ Using new structure
     button1: { name: '', link: '' },
     button2: { name: '', link: '' },
     button3: { name: '', link: '' },
@@ -169,20 +290,21 @@ const ProductManagement: React.FC = () => {
     }
   };
 
-  // Handle enhanced product submission (create/update)
+  // ✅ Updated product submission with ImageKit integration
   const handleProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation
-    if (!productForm.categoryId || !productForm.name || !productForm.price || !productForm.image1 || !productForm.button1.name || !productForm.button1.link) {
-      toast.error('Please fill all required fields (Category, Name, Price, First Image, First Button)');
+    // ✅ Updated validation
+    if (!productForm.categoryId || !productForm.name || !productForm.price || 
+        productForm.uploadedImages.length === 0 || !productForm.button1.name || !productForm.button1.link) {
+      toast.error('Please fill all required fields (Category, Name, Price, At least 1 Image, First Button)');
       return;
     }
 
     try {
-      // Prepare images array (filter out empty images)
-      const images = [productForm.image1, productForm.image2, productForm.image3]
-        .filter(img => img.trim() !== '');
+      // ✅ Process uploaded images
+      const imageUrls = productForm.uploadedImages.map(img => img.url);
+      const imageFileIds = productForm.uploadedImages.map(img => img.fileId);
 
       // Prepare buttons array (filter out empty buttons)
       const buttons = [productForm.button1, productForm.button2, productForm.button3]
@@ -199,11 +321,12 @@ const ProductManagement: React.FC = () => {
         description: productForm.description,
         price: parseFloat(productForm.price),
         originalPrice: productForm.originalPrice ? parseFloat(productForm.originalPrice) : null,
-        images: JSON.stringify(images), // Store as JSON
-        buttons: JSON.stringify(buttons), // Store as JSON
+        images: JSON.stringify(imageUrls), // Store ImageKit URLs as JSON
+        imageFileIds: JSON.stringify(imageFileIds), // Store file IDs for deletion
+        buttons: JSON.stringify(buttons),
         tags: productForm.tags,
-        // For backward compatibility, use first image and button for old fields
-        imageUrl: productForm.image1,
+        // For backward compatibility
+        imageUrl: imageUrls[0] || '', // Use first ImageKit URL
         affiliateLink: productForm.button1.link
       };
 
@@ -219,15 +342,14 @@ const ProductManagement: React.FC = () => {
       const data = await response.json();
       if (data.success) {
         toast.success(isEditing ? 'Product updated successfully!' : 'Product created successfully!');
+        // ✅ Reset form with correct structure
         setProductForm({
           categoryId: '',
           name: '',
           description: '',
           price: '',
           originalPrice: '',
-          image1: '',
-          image2: '',
-          image3: '',
+          uploadedImages: [],
           button1: { name: '', link: '' },
           button2: { name: '', link: '' },
           button3: { name: '', link: '' },
@@ -308,18 +430,28 @@ const ProductManagement: React.FC = () => {
     setShowCategoryForm(true);
   };
 
-  // Edit product function
+  // ✅ Updated edit product function
   const handleEditProduct = (product: Product) => {
     setEditingProduct(product);
+    
+    // Handle existing products with old image structure
+    const existingImages: { url: string; fileId: string }[] = [];
+    
+    // If product has imageUrl, add it to uploadedImages
+    if (product.imageUrl) {
+      existingImages.push({ 
+        url: product.imageUrl, 
+        fileId: '' // Old products won't have fileId
+      });
+    }
+    
     setProductForm({
       categoryId: product.categoryId,
       name: product.name,
       description: product.description || '',
       price: product.price.toString(),
       originalPrice: product.originalPrice?.toString() || '',
-      image1: product.imageUrl || '',
-      image2: '',
-      image3: '',
+      uploadedImages: existingImages, // ✅ Use new structure
       button1: { name: 'Buy Now', link: product.affiliateLink },
       button2: { name: '', link: '' },
       button3: { name: '', link: '' },
@@ -335,6 +467,7 @@ const ProductManagement: React.FC = () => {
     setShowCategoryForm(false);
   };
 
+  // ✅ Updated cancel product edit function
   const handleCancelProductEdit = () => {
     setEditingProduct(null);
     setProductForm({
@@ -343,9 +476,7 @@ const ProductManagement: React.FC = () => {
       description: '',
       price: '',
       originalPrice: '',
-      image1: '',
-      image2: '',
-      image3: '',
+      uploadedImages: [], // ✅ Use new structure
       button1: { name: '', link: '' },
       button2: { name: '', link: '' },
       button3: { name: '', link: '' },
@@ -548,7 +679,7 @@ const ProductManagement: React.FC = () => {
                   </div>
                 )}
 
-                {/* ENHANCED PRODUCT FORM */}
+                {/* ✅ ENHANCED PRODUCT FORM WITH IMAGEKIT INTEGRATION */}
                 {showProductForm && categories.length > 0 && (
                   <div className="bg-gray-50 rounded-lg p-6 mb-6 border max-h-[80vh] overflow-y-auto">
                     <h3 className="text-lg font-semibold mb-6">
@@ -636,115 +767,83 @@ const ProductManagement: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* 6. Images Section */}
-                      <div className="bg-white rounded-lg p-4 border-l-4 border-indigo-500">
-                        <h4 className="text-lg font-semibold text-gray-800 mb-4">📸 Product Images</h4>
-                        
-                        {/* Image 1 - Mandatory */}
-                        <div className="mb-4">
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            🖼️ Main Image <span className="text-red-500">* (Required)</span>
-                          </label>
-                          <input
-                            type="url"
-                            required
-                            value={productForm.image1}
-                            onChange={(e) => setProductForm({...productForm, image1: e.target.value})}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                            placeholder="https://example.com/main-image.jpg"
-                          />
-                        </div>
+                  {/* ✅ 6. NEW IMAGEKIT UPLOAD SECTION WITH NULL CHECK */}
+                  {token && (
+                    <ImageUploadSection
+                      uploadedImages={productForm.uploadedImages}
+                      onImagesChange={(images) => setProductForm({...productForm, uploadedImages: images})}
+                      token={token}
+                    />
+                  )}
 
-                        {/* Image 2 - Optional */}
-                        <div className="mb-4">
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            🖼️ Second Image - Optional
-                          </label>
-                          <input
-                            type="url"
-                            value={productForm.image2}
-                            onChange={(e) => setProductForm({...productForm, image2: e.target.value})}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                            placeholder="https://example.com/second-image.jpg"
-                          />
-                        </div>
+                  {!token && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                      <p className="text-red-600">⚠️ Authentication required for image upload</p>
+                    </div>
+                  )}
 
-                        {/* Image 3 - Optional */}
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            🖼️ Third Image - Optional
-                          </label>
-                          <input
-                            type="url"
-                            value={productForm.image3}
-                            onChange={(e) => setProductForm({...productForm, image3: e.target.value})}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                            placeholder="https://example.com/third-image.jpg"
-                          />
-                        </div>
+                  {/* 7. Product Buttons Section */}
+                  <div className="bg-white rounded-lg p-4 border-l-4 border-pink-500">
+                    <h4 className="text-lg font-semibold text-gray-800 mb-4">🔗 Product Buy Buttons</h4>
+                    
+                    {/* Button 1 - Mandatory */}
+                    <div className="mb-4 p-3 bg-pink-50 rounded border">
+                      <h5 className="font-medium text-gray-800 mb-3">
+                        🔥 Main Button <span className="text-red-500">* (Required)</span>
+                      </h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                          type="text"
+                          required
+                          value={productForm.button1.name}
+                          onChange={(e) => setProductForm({
+                            ...productForm, 
+                            button1: { ...productForm.button1, name: e.target.value }
+                          })}
+                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                          placeholder="Buy from Amazon"
+                        />
+                        <input
+                          type="url"
+                          required
+                          value={productForm.button1.link}
+                          onChange={(e) => setProductForm({
+                            ...productForm, 
+                            button1: { ...productForm.button1, link: e.target.value }
+                          })}
+                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                          placeholder="https://amazon.in/product-link"
+                        />
                       </div>
+                    </div>
 
-                      {/* 7. Product Buttons Section */}
-                      <div className="bg-white rounded-lg p-4 border-l-4 border-pink-500">
-                        <h4 className="text-lg font-semibold text-gray-800 mb-4">🔗 Product Buy Buttons</h4>
-                        
-                        {/* Button 1 - Mandatory */}
-                        <div className="mb-4 p-3 bg-pink-50 rounded border">
-                          <h5 className="font-medium text-gray-800 mb-3">
-                            🔥 Main Button <span className="text-red-500">* (Required)</span>
-                          </h5>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <input
-                              type="text"
-                              required
-                              value={productForm.button1.name}
-                              onChange={(e) => setProductForm({
-                                ...productForm, 
-                                button1: { ...productForm.button1, name: e.target.value }
-                              })}
-                              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                              placeholder="Buy from Amazon"
-                            />
-                            <input
-                              type="url"
-                              required
-                              value={productForm.button1.link}
-                              onChange={(e) => setProductForm({
-                                ...productForm, 
-                                button1: { ...productForm.button1, link: e.target.value }
-                              })}
-                              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                              placeholder="https://amazon.in/product-link"
-                            />
-                          </div>
-                        </div>
+                    {/* Button 2 - Optional */}
+                    <div className="mb-4 p-3 bg-gray-50 rounded border">
+                      <h5 className="font-medium text-gray-800 mb-3">⚡ Second Button - Optional</h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                          type="text"
+                          value={productForm.button2.name}
+                          onChange={(e) => setProductForm({
+                            ...productForm, 
+                            button2: { ...productForm.button2, name: e.target.value }
+                          })}
+                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+                          placeholder="Buy from Flipkart"
+                        />
+                        <input
+                          type="url"
+                          value={productForm.button2.link}
+                          onChange={(e) => setProductForm({
+                            ...productForm, 
+                            button2: { ...productForm.button2, link: e.target.value }
+                          })}
+                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+                          placeholder="https://flipkart.com/product-link"
+                        />
+                      </div>
+                    </div> {/* ✅ Fixed: Proper closing tag */}
 
-                        {/* Button 2 - Optional */}
-                        <div className="mb-4 p-3 bg-gray-50 rounded border">
-                          <h5 className="font-medium text-gray-800 mb-3">⚡ Second Button - Optional</h5>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <input
-                              type="text"
-                              value={productForm.button2.name}
-                              onChange={(e) => setProductForm({
-                                ...productForm, 
-                                button2: { ...productForm.button2, name: e.target.value }
-                              })}
-                              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
-                              placeholder="Buy from Flipkart"
-                            />
-                            <input
-                              type="url"
-                              value={productForm.button2.link}
-                              onChange={(e) => setProductForm({
-                                ...productForm, 
-                                button2: { ...productForm.button2, link: e.target.value }
-                              })}
-                              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
-                              placeholder="https://flipkart.com/product-link"
-                            />
-                          </div>
-                        </div>
 
                         {/* Button 3 - Optional */}
                         <div className="p-3 bg-gray-50 rounded border">
@@ -829,9 +928,10 @@ const ProductManagement: React.FC = () => {
                         </div>
                         {product.imageUrl && (
                           <img 
-                            src={product.imageUrl} 
+                            src={getImageForContext(product.imageUrl, 'thumbnail')} // ✅ Optimized
                             alt={product.name}
                             className="w-16 h-16 rounded-lg object-cover ml-4"
+                            loading="lazy"
                           />
                         )}
                       </div>

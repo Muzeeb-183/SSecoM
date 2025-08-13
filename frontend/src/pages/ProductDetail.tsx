@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
+import { getImageForContext } from '../utils/imageOptimization';
 
 interface ProductButton {
   name: string;
@@ -190,9 +191,10 @@ const ProductDetail: React.FC = () => {
             <div className="relative bg-white rounded-3xl shadow-2xl shadow-orange-500/20 overflow-hidden border-4 border-orange-500/30 p-8">
               {product.images[selectedImageIndex] ? (
                 <img
-                  src={product.images[selectedImageIndex]}
+                  src={getImageForContext(product.images[selectedImageIndex], 'detail')} // ✅ Optimized
                   alt={product.name}
                   className="w-full aspect-square object-contain rounded-2xl bg-white shadow-lg"
+                  loading="lazy"
                 />
               ) : (
                 <div className="w-full aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl flex items-center justify-center shadow-inner">
@@ -241,23 +243,25 @@ const ProductDetail: React.FC = () => {
             {/* Image Thumbnails - Professional Style */}
             {product.images.length > 1 && (
               <div className="flex space-x-3 overflow-x-auto pb-2 px-2">
-                {product.images.map((image, index) => (
-                  <button
-                    key={index}
-                    onClick={() => setSelectedImageIndex(index)}
-                    className={`flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden border-3 transition-all duration-300 shadow-md hover:shadow-lg p-1 bg-white ${
-                      selectedImageIndex === index 
-                        ? 'border-orange-500 shadow-lg shadow-orange-500/50 scale-105' 
-                        : 'border-gray-300 hover:border-orange-400 hover:scale-102'
-                    }`}
-                  >
-                    <img
-                      src={image}
-                      alt={`${product.name} ${index + 1}`}
-                      className="w-full h-full object-contain rounded-lg"
-                    />
-                  </button>
-                ))}
+                  {/*  For thumbnails: */}
+                  {product.images.map((image, index) => (
+                    <button
+                      key={index}
+                      onClick={() => setSelectedImageIndex(index)}
+                      className={`flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden border-3 transition-all duration-300 shadow-md hover:shadow-lg p-1 bg-white ${
+                        selectedImageIndex === index 
+                          ? 'border-orange-500 shadow-lg shadow-orange-500/50 scale-105' 
+                          : 'border-gray-300 hover:border-orange-400 hover:scale-102'
+                      }`}
+                    >
+                      <img
+                        src={getImageForContext(image, 'thumbnail')} // ✅ Small optimized thumbnails
+                        alt={`${product.name} ${index + 1}`}
+                        className="w-full h-full object-contain rounded-lg"
+                        loading="lazy"
+                      />
+                    </button>
+                  ))}
               </div>
             )}
           </div>

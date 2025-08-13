@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
+import { getOptimizedImageUrl, getImageForContext } from '../utils/imageOptimization';
 
 interface Category {
   id: string;
@@ -414,9 +415,10 @@ const HomePage: React.FC = () => {
                   <div className="relative overflow-hidden">
                     {product.imageUrl ? (
                       <img 
-                        src={product.imageUrl} 
+                        src={getImageForContext(product.imageUrl, 'card')} // ✅ Optimized 
                         alt={product.name}
                         className="w-full h-48 object-cover hover:scale-110 transition-transform duration-300"
+                        loading="lazy" // ✅ Add lazy loading
                       />
                     ) : (
                       <div className="w-full h-48 bg-gradient-to-br from-orange-800 to-red-800 flex items-center justify-center">
