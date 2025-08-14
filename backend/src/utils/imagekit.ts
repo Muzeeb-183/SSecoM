@@ -15,22 +15,42 @@ export const uploadImage = async (
   folder: string = 'products'
 ): Promise<{ url: string; fileId: string }> => {
   try {
+    let transformationConfig;
+    
+    if (folder === 'profiles') {
+      // Special configuration for profile pictures - ✅ Fixed transformation type
+      transformationConfig = {
+        pre: 'q-90,f-auto', 
+        post: [
+          {
+            type: 'transformation' as const, // ✅ Fixed: Use literal type assertion
+            value: 'w-300,h-300,c-force,bg-FFFFFF,r-max'
+          }
+        ]
+      };
+    } else {
+      // Default configuration for products - ✅ Fixed transformation type
+      transformationConfig = {
+        pre: 'q-80,f-auto',
+        post: [
+          {
+            type: 'transformation' as const, // ✅ Fixed: Use literal type assertion
+            value: 'w-800,h-800,c-maintain_ratio'
+          }
+        ]
+      };
+    }
+
+    // ✅ Fixed: Await the upload promise properly
     const result = await imagekit.upload({
       file: file.buffer,
       fileName: fileName,
       folder: `ssecom/${folder}`,
       useUniqueFileName: true,
-      transformation: {
-        pre: 'q-80,f-auto', // Auto quality and format optimization
-        post: [
-          {
-            type: 'transformation',
-            value: 'w-800,h-800,c-maintain_ratio'
-          }
-        ]
-      }
+      transformation: transformationConfig
     });
 
+    // ✅ Fixed: Return the actual properties from the upload response
     return {
       url: result.url,
       fileId: result.fileId

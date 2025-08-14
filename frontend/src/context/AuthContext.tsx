@@ -214,13 +214,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Update user profile
+  // ✅ CRITICAL FIX: Update user profile with cache-busting for profile pictures
   const updateProfile = (updates: Partial<User>) => {
     if (user) {
-      const updatedUser = { ...user, ...updates };
+      const updatedUser = { 
+        ...user, 
+        ...updates,
+        // ✅ Add timestamp to picture URL for cache-busting
+        picture: updates.picture ? `${updates.picture}?t=${Date.now()}` : user.picture
+      };
       setUser(updatedUser);
       localStorage.setItem('ssecom_user', JSON.stringify(updatedUser));
-      console.log('👤 Profile updated:', updates);
+      console.log('👤 Profile updated with cache-busting:', updates);
+      console.log('📸 Updated picture URL:', updatedUser.picture);
     }
   };
 

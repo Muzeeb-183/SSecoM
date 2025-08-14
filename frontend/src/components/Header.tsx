@@ -30,6 +30,12 @@ const Header: React.FC = () => {
     // ✅ Removed: navigate('/cart') - Let sidebar handle navigation
   };
 
+  // ✅ NEW: Handle profile page navigation
+  const handleProfileClick = () => {
+    setShowProfileMenu(false); // Close dropdown
+    navigate('/profile'); // Navigate to profile page
+  };
+
   return (
     <>
       {/* Custom CSS for animations - Fixed for React */}
@@ -63,6 +69,10 @@ const Header: React.FC = () => {
           0%, 100% { transform: translateY(0) scale(1); }
           50% { transform: translateY(-4px) scale(1.1); }
         }
+        @keyframes profilePulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+        }
         .fire-glow { animation: fireGlow 2s ease-in-out infinite; }
         .fire-float { animation: fireFloat 3s ease-in-out infinite; }
         .sparkle { animation: sparkle 1.5s ease-in-out infinite; }
@@ -70,6 +80,7 @@ const Header: React.FC = () => {
         .logo-spin { animation: logoSpin 0.6s ease-in-out; }
         .text-glow { animation: textGlow 3s ease-in-out infinite; }
         .cart-bounce { animation: cartBounce 2s ease-in-out infinite; }
+        .profile-pulse { animation: profilePulse 2s ease-in-out infinite; }
       `}</style>
 
       <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ease-in-out mb-6 ${
@@ -182,14 +193,18 @@ const Header: React.FC = () => {
                         isScrolled ? 'p-2' : 'p-3'
                       }`}
                     >
-                      {/* Profile Picture with Fire Ring */}
+                      {/* Profile Picture with Fire Ring - ✅ FIXED WITH CACHE-BUSTING */}
                       <div className="relative">
                         <img 
-                          src={user.picture} 
+                          src={`${user.picture}?t=${Date.now()}`} // ✅ CRITICAL FIX: Cache-busting timestamp
                           alt={user.name}
-                          className={`rounded-full border-2 border-orange-500 shadow-lg group-hover:scale-110 transition-transform duration-300 fire-float ${
+                          className={`rounded-full border-2 border-orange-500 shadow-lg group-hover:scale-110 transition-transform duration-300 fire-float object-cover ${
                             isScrolled ? 'w-8 h-8' : 'w-10 h-10'
                           }`}
+                          onError={(e) => {
+                            // Fallback to default avatar if image fails to load
+                            (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'User')}&background=f97316&color=fff&size=300`;
+                          }}
                         />
                         
                         {/* Admin Crown */}
@@ -200,6 +215,13 @@ const Header: React.FC = () => {
                             👑
                           </div>
                         )}
+
+                        {/* ✅ NEW: Profile Picture Upload Indicator */}
+                        <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full border border-white opacity-80 profile-pulse">
+                          <div className="w-full h-full rounded-full bg-white flex items-center justify-center">
+                            <span className="text-green-600 text-[8px]">📸</span>
+                          </div>
+                        </div>
                       </div>
                       
                       {/* User Info - Responsive */}
@@ -232,16 +254,28 @@ const Header: React.FC = () => {
                         {/* Animated Fire Border */}
                         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-red-500/20 via-orange-500/20 to-yellow-500/20 fire-glow"></div>
                         
-                        {/* User Details */}
+                        {/* User Details - ✅ FIXED WITH CACHE-BUSTING */}
                         <div className="p-6 border-b border-orange-500/30 relative z-10">
                           <div className="flex items-center space-x-4">
                             <div className="relative">
                               <img 
-                                src={user.picture} 
+                                src={`${user.picture}?t=${Date.now()}`} // ✅ CRITICAL FIX: Cache-busting timestamp
                                 alt={user.name}
-                                className="w-16 h-16 rounded-full border-3 border-orange-500 shadow-lg fire-float"
+                                className="w-16 h-16 rounded-full border-3 border-orange-500 shadow-lg fire-float object-cover"
+                                onError={(e) => {
+                                  // Fallback avatar
+                                  (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'User')}&background=f97316&color=fff&size=300`;
+                                }}
                               />
                               <div className="absolute inset-0 rounded-full fire-glow"></div>
+                              
+                              {/* ✅ NEW: Profile Picture Edit Indicator */}
+                              <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full border-2 border-white shadow-lg cursor-pointer hover:scale-110 transition-transform" 
+                                   title="Click to update profile picture">
+                                <div className="w-full h-full rounded-full flex items-center justify-center">
+                                  <span className="text-white text-xs">📷</span>
+                                </div>
+                              </div>
                             </div>
                             <div className="flex-1">
                               <h3 className="font-bold text-lg text-orange-200 text-glow">{user.name}</h3>
@@ -271,6 +305,25 @@ const Header: React.FC = () => {
                         
                         {/* Quick Actions */}
                         <div className="p-4 space-y-2 relative z-10">
+                          {/* ✅ NEW: Profile Management Action */}
+                          <button
+                            onClick={handleProfileClick}
+                            className="w-full flex items-center space-x-3 p-3 rounded-xl bg-indigo-800/50 hover:bg-indigo-700/50 transition-all group border border-indigo-500/30 fire-glow"
+                          >
+                            <span className="text-indigo-400 group-hover:scale-125 transition-transform profile-pulse">👤</span>
+                            <div className="flex-1 text-left">
+                              <span className="font-bold text-indigo-200 group-hover:text-indigo-100">🔥 Fire Profile</span>
+                              <div className="text-xs text-indigo-300">
+                                Update picture & settings
+                              </div>
+                            </div>
+                            <div className="text-indigo-400 group-hover:text-indigo-300">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                            </div>
+                          </button>
+
                           {/* ✅ Cart Action in Dropdown - Updated with real count */}
                           <button
                             onClick={handleCartClick}
@@ -302,7 +355,7 @@ const Header: React.FC = () => {
                           
                           <a
                             href="/wishlist"
-                            className="flex items-center space-x-3 p-3 rounded-xl bg-pink-800/50 hover:bg-pink-700/50 transition-all group border border-pink-500/30 fire-glow"
+                            className="flex items-center space-x-3 p-3 rounded-xl bg-pink-800/50 hover:bg-pink-700/50 transition-all group border border-purple-500/30 fire-glow"
                           >
                             <span className="text-pink-400 group-hover:scale-125 transition-transform sparkle">❤️</span>
                             <span className="font-bold text-pink-200 group-hover:text-pink-100">🔥 Hot Wishlist</span>

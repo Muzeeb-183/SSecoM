@@ -115,6 +115,7 @@ app.post('/api/auth/google', async (req: Request, res: Response): Promise<void> 
       console.log('📊 Existing user query result count:', existingUserResult.recordset.length);
 
       let userRole = 'user'; // Default role
+      let finalUser;
 
       if (existingUserResult.recordset.length === 0) {
         // Create new user with default 'user' role
@@ -141,17 +142,36 @@ app.post('/api/auth/google', async (req: Request, res: Response): Promise<void> 
         console.log('✅ Rows affected by insert:', insertResult.rowsAffected);
         console.log('🆕 New user created in database:', googleUser.email);
         userRole = 'user';
+
+        finalUser = {
+          id: googleUser.googleId,
+          email: googleUser.email,
+          name: googleUser.name,
+          picture: googleUser.picture,
+          role: userRole,
+          isUniversityStudent: false,
+          universityDomain: undefined
+        };
       } else {
-        // Update existing user's last login and profile, preserve role
+        // ✅ CRITICAL FIX: Update existing user while preserving custom profile picture
         const existingUser = existingUserResult.recordset[0];
         userRole = existingUser.role;
         
+        // ✅ Check if user has a custom profile picture (ImageKit URL)
+        const hasCustomPicture = existingUser.picture && 
+          existingUser.picture.includes('ik.imagekit.io') && 
+          existingUser.picture.includes('ssecom/profiles/');
+
         console.log('🔄 Updating existing user:', googleUser.email, 'with role:', userRole);
+        console.log('📸 Has custom profile picture:', hasCustomPicture ? 'YES' : 'NO');
+        
+        // ✅ Preserve custom profile picture if it exists, otherwise use Google picture
+        const pictureToSave = hasCustomPicture ? existingUser.picture : googleUser.picture;
         
         const updateResult = await pool.request()
           .input('id', sql.NVarChar(50), googleUser.googleId)
           .input('name', sql.NVarChar(255), googleUser.name)
-          .input('picture', sql.NVarChar(500), googleUser.picture)
+          .input('picture', sql.NVarChar(500), pictureToSave) // ✅ FIXED: Use preserved picture
           .query(`
             UPDATE Users 
             SET name = @name, picture = @picture, lastLoginAt = GETDATE()
@@ -161,6 +181,17 @@ app.post('/api/auth/google', async (req: Request, res: Response): Promise<void> 
         console.log('📝 Update result:', updateResult);
         console.log('✅ Rows affected by update:', updateResult.rowsAffected);
         console.log('🔄 Existing user updated in database:', googleUser.email);
+        console.log('📸 Profile picture preserved:', pictureToSave);
+
+        finalUser = {
+          id: googleUser.googleId,
+          email: googleUser.email,
+          name: googleUser.name,
+          picture: pictureToSave, // ✅ Use preserved picture
+          role: userRole,
+          isUniversityStudent: false,
+          universityDomain: undefined
+        };
       }
 
       // Create JWT payload with role
@@ -168,7 +199,7 @@ app.post('/api/auth/google', async (req: Request, res: Response): Promise<void> 
         userId: googleUser.googleId,
         email: googleUser.email,
         name: googleUser.name,
-        picture: googleUser.picture,
+        picture: finalUser.picture, // ✅ Use final picture (may be custom or Google)
         role: userRole // Include role in JWT
       };
 
@@ -179,6 +210,7 @@ app.post('/api/auth/google', async (req: Request, res: Response): Promise<void> 
       console.log('🎓 User authenticated and saved to database:', {
         email: googleUser.email,
         role: userRole,
+        hasCustomPicture: finalUser.picture.includes('ik.imagekit.io'),
         timestamp: new Date().toISOString()
       });
 
@@ -187,15 +219,7 @@ app.post('/api/auth/google', async (req: Request, res: Response): Promise<void> 
       res.status(200).json({
         success: true,
         message: 'Authentication successful',
-        user: {
-          id: googleUser.googleId,
-          email: googleUser.email,
-          name: googleUser.name,
-          picture: googleUser.picture,
-          role: userRole,
-          isUniversityStudent: false,
-          universityDomain: undefined
-        },
+        user: finalUser,
         token: jwtToken,
         expiresIn: process.env.JWT_EXPIRES_IN || '7d'
       });
@@ -221,8 +245,9 @@ app.post('/api/auth/google', async (req: Request, res: Response): Promise<void> 
   }
 });
 
-// JWT verification endpoint with proper null checking
-app.get('/api/auth/verify', (req: Request, res: Response): void => {
+
+// JWT verification endpoint with proper null checking - ✅ FIXED VERSION
+app.get('/api/auth/verify', async (req: Request, res: Response): Promise<void> => {
   const authHeader = req.headers.authorization;
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -248,13 +273,46 @@ app.get('/api/auth/verify', (req: Request, res: Response): void => {
 
     const decoded = verifyToken(token);
     console.log('✅ Token verified successfully for:', decoded.email, 'Role:', decoded.role);
-    console.log('🔍 Decoded token data:', decoded);
     
-    res.json({
-      success: true,
-      message: 'Token is valid',
-      user: decoded
-    });
+    // ✅ CRITICAL FIX: Fetch fresh user data from database instead of using cached JWT data
+    try {
+      const pool = await getDbConnection();
+      const freshUserResult = await pool.request()
+        .input('userId', sql.NVarChar(50), decoded.userId)
+        .query('SELECT id, email, name, picture, role FROM Users WHERE id = @userId');
+      
+      if (freshUserResult.recordset.length === 0) {
+        console.log('❌ User not found in database:', decoded.userId);
+        res.status(401).json({ success: false, error: 'User not found' });
+        return;
+      }
+      
+      const freshUser = freshUserResult.recordset[0];
+      console.log('📸 Fresh user data from database - Picture URL:', freshUser.picture);
+      
+      res.json({
+        success: true,
+        message: 'Token is valid',
+        user: {
+          id: freshUser.id,
+          email: freshUser.email,
+          name: freshUser.name,
+          picture: freshUser.picture, // ✅ Fresh picture URL from database
+          role: freshUser.role,
+          isUniversityStudent: false,
+          universityDomain: undefined
+        }
+      });
+    } catch (dbError) {
+      console.error('❌ Database error during auth verification:', dbError);
+      // Fallback to JWT data if database fails
+      console.log('🔄 Falling back to JWT data due to database error');
+      res.json({
+        success: true,
+        message: 'Token is valid (fallback)',
+        user: decoded
+      });
+    }
   } catch (error) {
     console.log('❌ Auth verify failed: Invalid token -', error instanceof Error ? error.message : 'Unknown error');
     console.log('🔍 Detailed error:', error);
@@ -1642,6 +1700,138 @@ app.get('/api/admin/dashboard-summary', async (req: Request, res: Response): Pro
   } catch (error) {
     console.error('❌ Get dashboard summary error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch dashboard summary' });
+  }
+});
+
+
+// ========== PROFILE PICTURE UPLOAD ENDPOINT ==========
+
+// Configure multer specifically for profile pictures (2MB limit)
+const profileUpload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 2 * 1024 * 1024 // 2MB limit for profile pictures
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  }
+});
+
+// Update user profile picture
+app.put('/api/users/profile-picture', profileUpload.single('profilePicture'), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Authorization required' });
+      return;
+    }
+
+    const token = extractTokenFromHeader(authHeader);
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Invalid authorization header format' });
+      return;
+    }
+
+    const decoded = verifyToken(token);
+    
+    if (!req.file) {
+      res.status(400).json({ success: false, error: 'Profile picture file is required' });
+      return;
+    }
+
+    // Validate file size (2MB limit)
+    const maxSize = 2 * 1024 * 1024;
+    if (req.file.size > maxSize) {
+      res.status(400).json({ 
+        success: false, 
+        error: 'Profile picture must be less than 2MB. Large images will be automatically compressed.' 
+      });
+      return;
+    }
+
+    console.log(`📸 Profile picture upload started for user: ${decoded.email}`);
+    console.log(`📊 File size: ${(req.file.size / 1024 / 1024).toFixed(2)}MB`);
+
+    // ✅ CRITICAL FIX: Upload to ImageKit with proper folder structure
+    const fileName = `profile_${decoded.userId}_${Date.now()}`;
+    
+    try {
+      // ✅ FIXED: Explicitly pass 'profiles' folder to ensure proper organization
+      const uploadResult = await uploadImage(req.file, fileName, 'profiles');
+      
+      console.log(`✅ Profile picture uploaded to ImageKit folder: ssecom/profiles/`);
+      console.log(`🔗 Image URL: ${uploadResult.url}`);
+      console.log(`📁 File ID: ${uploadResult.fileId}`);
+
+      // Update user's picture in database
+      const pool = await getDbConnection();
+      const result = await pool.request()
+        .input('userId', sql.NVarChar(50), decoded.userId)
+        .input('picture', sql.NVarChar(500), uploadResult.url)
+        .query(`
+          UPDATE Users 
+          SET picture = @picture, lastLoginAt = GETDATE()
+          WHERE id = @userId
+        `);
+
+      if (result.rowsAffected[0] === 0) {
+        // If database update fails, clean up uploaded image
+        console.warn(`⚠️ Database update failed for user: ${decoded.userId}, cleaning up uploaded image`);
+        try {
+          await deleteImage(uploadResult.fileId);
+          console.log(`🗑️ Cleaned up uploaded image: ${uploadResult.fileId}`);
+        } catch (cleanupError) {
+          console.error('Failed to cleanup uploaded image:', cleanupError);
+        }
+        
+        res.status(404).json({ success: false, error: 'User not found' });
+        return;
+      }
+
+      // Get updated user data
+      const updatedUserResult = await pool.request()
+        .input('userId', sql.NVarChar(50), decoded.userId)
+        .query('SELECT id, email, name, picture, role FROM Users WHERE id = @userId');
+
+      const updatedUser = updatedUserResult.recordset[0];
+
+      console.log(`✅ Profile picture updated successfully for: ${decoded.email}`);
+      console.log(`📸 New profile picture URL: ${updatedUser.picture}`);
+
+      res.json({
+        success: true,
+        message: 'Profile picture updated successfully! 🔥',
+        user: {
+          id: updatedUser.id,
+          email: updatedUser.email,
+          name: updatedUser.name,
+          picture: updatedUser.picture,
+          role: updatedUser.role,
+          isUniversityStudent: false,
+          universityDomain: undefined
+        },
+        imageUrl: uploadResult.url
+      });
+
+    } catch (uploadError) {
+      console.error('❌ ImageKit upload failed:', uploadError);
+      res.status(500).json({ 
+        success: false, 
+        error: 'Failed to upload profile picture. Please try again.' 
+      });
+      return;
+    }
+
+  } catch (error) {
+    console.error('❌ Profile picture upload error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to upload profile picture. Please try again.' 
+    });
   }
 });
 

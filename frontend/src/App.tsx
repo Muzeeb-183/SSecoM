@@ -301,6 +301,7 @@ const App: React.FC = () => {
                         </RouteProtection>
                       } 
                     />
+                    <Route path="/profile" element={<ProfilePage />} />
                     
                     {/* Affiliate Marketing Routes */}
                     <Route path="/deals" element={<ProductsPage />} />
