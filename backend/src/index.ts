@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import path from 'path';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 
 // Database imports
 import sql from 'mssql';
@@ -16,6 +17,7 @@ import { generateToken, verifyToken, extractTokenFromHeader, JWTPayload } from '
 
 import multer from 'multer';
 import { uploadImage, deleteImage } from './utils/imagekit';
+
 
 // Configure multer for memory storage
 const upload = multer({ 
@@ -1224,6 +1226,239 @@ app.get('/api/categories/:categoryId/products', async (req: Request, res: Respon
   }
 });
 
+// ===== CART API ENDPOINTS - UPDATED FOR YOUR JWT SYSTEM =====
+
+// Get user's cart
+app.get('/api/cart', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Authorization required' });
+      return;
+    }
+
+    const token = extractTokenFromHeader(authHeader);
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Invalid authorization header' });
+      return;
+    }
+
+    // ✅ Use your existing verifyToken function
+    const decoded = verifyToken(token);
+
+    const pool = await getDbConnection();
+    const result = await pool.request()
+      .input('userId', sql.NVarChar(50), decoded.userId) // ✅ Use decoded.userId
+      .query(`
+        SELECT 
+          c.id,
+          c.productId,
+          c.quantity,
+          c.addedAt,
+          p.name as productName,
+          p.price,
+          p.originalPrice,
+          p.imageUrl,
+          cat.name as categoryName
+        FROM CartItems c
+        INNER JOIN Products p ON c.productId = p.id
+        INNER JOIN Categories cat ON p.categoryId = cat.id
+        WHERE c.userId = @userId
+        ORDER BY c.addedAt DESC
+      `);
+
+    res.json({
+      success: true,
+      cartItems: result.recordset
+    });
+
+  } catch (error) {
+    console.error('❌ Get cart error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch cart' });
+  }
+});
+
+// Add item to cart
+app.post('/api/cart/add', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Authorization required' });
+      return;
+    }
+
+    const token = extractTokenFromHeader(authHeader);
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Invalid authorization header' });
+      return;
+    }
+
+    // ✅ Use your existing verifyToken function
+    const decoded = verifyToken(token);
+    const { productId, quantity = 1 } = req.body;
+
+    if (!productId) {
+      res.status(400).json({ success: false, error: 'Product ID is required' });
+      return;
+    }
+
+    const pool = await getDbConnection();
+
+    // Check if product exists
+    const productCheck = await pool.request()
+      .input('productId', sql.NVarChar(50), productId)
+      .query('SELECT id FROM Products WHERE id = @productId AND status = \'active\'');
+
+    if (productCheck.recordset.length === 0) {
+      res.status(404).json({ success: false, error: 'Product not found' });
+      return;
+    }
+
+    // Check if item already exists in cart
+    const existingItem = await pool.request()
+      .input('userId', sql.NVarChar(50), decoded.userId) // ✅ Use decoded.userId
+      .input('productId', sql.NVarChar(50), productId)
+      .query('SELECT id, quantity FROM CartItems WHERE userId = @userId AND productId = @productId');
+
+    if (existingItem.recordset.length > 0) {
+      // Update quantity
+      await pool.request()
+        .input('userId', sql.NVarChar(50), decoded.userId) // ✅ Use decoded.userId
+        .input('productId', sql.NVarChar(50), productId)
+        .input('quantity', sql.Int, existingItem.recordset[0].quantity + quantity)
+        .query('UPDATE CartItems SET quantity = @quantity, updatedAt = GETDATE() WHERE userId = @userId AND productId = @productId');
+    } else {
+      // Add new item
+      await pool.request()
+        .input('userId', sql.NVarChar(50), decoded.userId) // ✅ Use decoded.userId
+        .input('productId', sql.NVarChar(50), productId)
+        .input('quantity', sql.Int, quantity)
+        .query(`
+          INSERT INTO CartItems (userId, productId, quantity, addedAt, updatedAt)
+          VALUES (@userId, @productId, @quantity, GETDATE(), GETDATE())
+        `);
+    }
+
+    res.json({ success: true, message: 'Item added to cart' });
+
+  } catch (error) {
+    console.error('❌ Add to cart error:', error);
+    res.status(500).json({ success: false, error: 'Failed to add item to cart' });
+  }
+});
+
+// Update cart item quantity
+app.put('/api/cart/update', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Authorization required' });
+      return;
+    }
+
+    const token = extractTokenFromHeader(authHeader);
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Invalid authorization header' });
+      return;
+    }
+
+    // ✅ Use your existing verifyToken function
+    const decoded = verifyToken(token);
+    const { productId, quantity } = req.body;
+
+    if (!productId || quantity < 0) {
+      res.status(400).json({ success: false, error: 'Invalid product ID or quantity' });
+      return;
+    }
+
+    const pool = await getDbConnection();
+
+    if (quantity === 0) {
+      // Remove item if quantity is 0
+      await pool.request()
+        .input('userId', sql.NVarChar(50), decoded.userId) // ✅ Use decoded.userId
+        .input('productId', sql.NVarChar(50), productId)
+        .query('DELETE FROM CartItems WHERE userId = @userId AND productId = @productId');
+    } else {
+      // Update quantity
+      await pool.request()
+        .input('userId', sql.NVarChar(50), decoded.userId) // ✅ Use decoded.userId
+        .input('productId', sql.NVarChar(50), productId)
+        .input('quantity', sql.Int, quantity)
+        .query('UPDATE CartItems SET quantity = @quantity, updatedAt = GETDATE() WHERE userId = @userId AND productId = @productId');
+    }
+
+    res.json({ success: true, message: 'Cart updated successfully' });
+
+  } catch (error) {
+    console.error('❌ Update cart error:', error);
+    res.status(500).json({ success: false, error: 'Failed to update cart' });
+  }
+});
+
+// Remove item from cart
+app.delete('/api/cart/remove/:productId', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Authorization required' });
+      return;
+    }
+
+    const token = extractTokenFromHeader(authHeader);
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Invalid authorization header' });
+      return;
+    }
+
+    // ✅ Use your existing verifyToken function
+    const decoded = verifyToken(token);
+    const { productId } = req.params;
+
+    const pool = await getDbConnection();
+    await pool.request()
+      .input('userId', sql.NVarChar(50), decoded.userId) // ✅ Use decoded.userId
+      .input('productId', sql.NVarChar(50), productId)
+      .query('DELETE FROM CartItems WHERE userId = @userId AND productId = @productId');
+
+    res.json({ success: true, message: 'Item removed from cart' });
+
+  } catch (error) {
+    console.error('❌ Remove from cart error:', error);
+    res.status(500).json({ success: false, error: 'Failed to remove item from cart' });
+  }
+});
+
+// Clear entire cart
+app.delete('/api/cart/clear', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ') ) {
+      res.status(401).json({ success: false, error: 'Authorization required' });
+      return;
+    }
+
+    const token = extractTokenFromHeader(authHeader);
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Invalid authorization header' });
+      return;
+    }
+
+    // ✅ Use your existing verifyToken function
+    const decoded = verifyToken(token);
+
+    const pool = await getDbConnection();
+    await pool.request()
+      .input('userId', sql.NVarChar(50), decoded.userId) // ✅ Use decoded.userId
+      .query('DELETE FROM CartItems WHERE userId = @userId');
+
+    res.json({ success: true, message: 'Cart cleared successfully' });
+
+  } catch (error) {
+    console.error('❌ Clear cart error:', error);
+    res.status(500).json({ success: false, error: 'Failed to clear cart' });
+  }
+});
 
 
 // Welcome message for root path

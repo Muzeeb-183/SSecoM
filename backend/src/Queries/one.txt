@@ -74,3 +74,30 @@ ADD imageFileIds NVARCHAR(MAX);  -- JSON array of ImageKit file IDs
 SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE 
 FROM INFORMATION_SCHEMA.COLUMNS 
 WHERE TABLE_NAME = 'Products' AND COLUMN_NAME = 'imageFileIds';
+
+
+
+-- Create CartItems table for user-specific cart storage
+CREATE TABLE CartItems (
+    id NVARCHAR(50) PRIMARY KEY DEFAULT NEWID(),
+    userId NVARCHAR(50) NOT NULL,
+    productId NVARCHAR(50) NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    addedAt DATETIME2 DEFAULT GETDATE(),
+    updatedAt DATETIME2 DEFAULT GETDATE(),
+    
+    -- Foreign key constraints
+    FOREIGN KEY (userId) REFERENCES Users(id) ON DELETE CASCADE,
+    FOREIGN KEY (productId) REFERENCES Products(id) ON DELETE CASCADE,
+    
+    -- Unique constraint to prevent duplicate items per user
+    UNIQUE(userId, productId)
+);
+
+-- Create indexes for better performance
+CREATE INDEX IX_CartItems_UserId ON CartItems(userId);
+CREATE INDEX IX_CartItems_ProductId ON CartItems(productId);
+CREATE INDEX IX_CartItems_AddedAt ON CartItems(addedAt DESC);
+
+-- Verify table creation
+SELECT * FROM CartItems;

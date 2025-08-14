@@ -1,7 +1,5 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
-import { GoogleOAuthProvider } from '@react-oauth/google';
 import App from './App';
 import './styles/index.css';
 
@@ -28,13 +26,11 @@ if (!googleClientId) {
 // Create React root
 const root = ReactDOM.createRoot(container);
 
-// Render WITHOUT React.StrictMode to prevent double execution
+// ✅ FIXED: Remove BrowserRouter from here - App.tsx handles routing
 root.render(
-  <GoogleOAuthProvider clientId={googleClientId || ''}>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
-  </GoogleOAuthProvider>
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
 );
 
 // Performance monitoring for student experience

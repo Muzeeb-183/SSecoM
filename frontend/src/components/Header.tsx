@@ -1,11 +1,17 @@
 // frontend/src/components/Header.tsx
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useCart } from '../context/CartContext';
+import CartSidebar from './CartSidebar'; // ✅ Fixed: Correct import path
 
 const Header: React.FC = () => {
   const { user, logout, isAuthenticated } = useAuth();
+  const { totalItems } = useCart(); // ✅ Use real cart data
+  const navigate = useNavigate();
   const [isScrolled, setIsScrolled] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showCartSidebar, setShowCartSidebar] = useState(false);
 
   // Handle scroll effect for invisible background
   useEffect(() => {
@@ -15,6 +21,14 @@ const Header: React.FC = () => {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // ✅ Fixed: Handle cart click - Open sidebar instead of navigating
+  const handleCartClick = () => {
+    console.log('Cart clicked!');
+    setShowCartSidebar(true); // ✅ Open sidebar
+    setShowProfileMenu(false); // Close profile menu if open
+    // ✅ Removed: navigate('/cart') - Let sidebar handle navigation
+  };
 
   return (
     <>
@@ -45,12 +59,17 @@ const Header: React.FC = () => {
           0%, 100% { text-shadow: 0 0 10px rgba(251, 146, 60, 0.5); }
           50% { text-shadow: 0 0 20px rgba(251, 146, 60, 0.8), 0 0 30px rgba(239, 68, 68, 0.5); }
         }
+        @keyframes cartBounce {
+          0%, 100% { transform: translateY(0) scale(1); }
+          50% { transform: translateY(-4px) scale(1.1); }
+        }
         .fire-glow { animation: fireGlow 2s ease-in-out infinite; }
         .fire-float { animation: fireFloat 3s ease-in-out infinite; }
         .sparkle { animation: sparkle 1.5s ease-in-out infinite; }
         .slide-down { animation: slideDown 0.3s ease-out; }
         .logo-spin { animation: logoSpin 0.6s ease-in-out; }
         .text-glow { animation: textGlow 3s ease-in-out infinite; }
+        .cart-bounce { animation: cartBounce 2s ease-in-out infinite; }
       `}</style>
 
       <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ease-in-out mb-6 ${
@@ -114,6 +133,47 @@ const Header: React.FC = () => {
             }`}>
               {isAuthenticated && user ? (
                 <>
+                  {/* ✅ CART ICON - Updated with real cart data */}
+                  <button
+                    onClick={handleCartClick}
+                    className={`relative bg-gray-800/90 backdrop-blur-sm rounded-xl shadow-lg hover:shadow-orange-500/40 transition-all duration-300 hover:bg-gray-700/90 group border border-orange-500/30 fire-glow cart-bounce ${
+                      isScrolled ? 'p-2' : 'p-3'
+                    }`}
+                  >
+                    {/* Cart Icon */}
+                    <svg 
+                      className={`text-orange-400 group-hover:text-orange-300 transition-colors duration-300 ${
+                        isScrolled ? 'w-6 h-6' : 'w-7 h-7'
+                      }`} 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        strokeWidth={2} 
+                        d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-2.5 5M7 13l2.5 5m6-5v6a2 2 0 01-2 2H9a2 2 0 01-2-2v-6m6 0V9a2 2 0 00-2-2H9a2 2 0 00-2 2v4.01" 
+                      />
+                    </svg>
+                    
+                    {/* Cart Badge - Shows real cart count */}
+                    {totalItems > 0 && (
+                      <div className={`absolute -top-2 -right-2 bg-gradient-to-r from-red-600 to-orange-600 text-white rounded-full font-bold text-xs border-2 border-yellow-500 fire-glow sparkle ${
+                        isScrolled ? 'w-5 h-5 text-[10px]' : 'w-6 h-6 text-xs'
+                      } flex items-center justify-center`}>
+                        {totalItems > 99 ? '99+' : totalItems}
+                      </div>
+                    )}
+                    
+                    {/* Fire particles around cart on hover */}
+                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+                      <div className="absolute -top-1 left-2 w-1 h-1 bg-yellow-500 rounded-full sparkle"></div>
+                      <div className="absolute top-1 -right-1 w-1 h-1 bg-orange-500 rounded-full sparkle" style={{animationDelay: '0.3s'}}></div>
+                      <div className="absolute -bottom-1 left-1 w-1 h-1 bg-red-500 rounded-full sparkle" style={{animationDelay: '0.6s'}}></div>
+                    </div>
+                  </button>
+
                   {/* Compact User Profile */}
                   <div className="relative">
                     <button
@@ -203,14 +263,33 @@ const Header: React.FC = () => {
                               <div className="text-xs text-green-300">🔥 Money Saved</div>
                             </div>
                             <div className="text-center p-3 bg-gradient-to-br from-orange-800/50 to-red-600/50 rounded-xl border border-orange-500/50 fire-glow">
-                              <div className="text-xl font-bold text-orange-200">47</div>
-                              <div className="text-xs text-orange-300">💥 Fire Deals</div>
+                              <div className="text-xl font-bold text-orange-200">{totalItems}</div>
+                              <div className="text-xs text-orange-300">🛒 Cart Items</div>
                             </div>
                           </div>
                         </div>
                         
                         {/* Quick Actions */}
                         <div className="p-4 space-y-2 relative z-10">
+                          {/* ✅ Cart Action in Dropdown - Updated with real count */}
+                          <button
+                            onClick={handleCartClick}
+                            className="w-full flex items-center space-x-3 p-3 rounded-xl bg-blue-800/50 hover:bg-blue-700/50 transition-all group border border-blue-500/30 fire-glow"
+                          >
+                            <span className="text-blue-400 group-hover:scale-125 transition-transform cart-bounce">🛒</span>
+                            <div className="flex-1 text-left">
+                              <span className="font-bold text-blue-200 group-hover:text-blue-100">🔥 Fire Cart</span>
+                              <div className="text-xs text-blue-300">
+                                {totalItems === 0 ? 'Cart is empty' : `${totalItems} item${totalItems > 1 ? 's' : ''} ready`}
+                              </div>
+                            </div>
+                            {totalItems > 0 && (
+                              <div className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {totalItems}
+                              </div>
+                            )}
+                          </button>
+
                           {user.role === 'admin' && (
                             <a
                               href="/admin"
@@ -288,6 +367,12 @@ const Header: React.FC = () => {
       <div className={`transition-all duration-500 ${
         isScrolled ? 'h-16' : 'h-20'
       }`}></div>
+      
+      {/* ✅ Cart Sidebar - Fixed positioning */}
+      <CartSidebar 
+        isOpen={showCartSidebar} 
+        onClose={() => setShowCartSidebar(false)} 
+      />
     </>
   );
 };
