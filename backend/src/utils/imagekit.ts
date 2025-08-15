@@ -1,3 +1,5 @@
+// backend/src/utils/imagekit.ts - ENHANCED WITH CATEGORY SUPPORT
+
 import ImageKit from 'imagekit';
 
 const imagekit = new ImageKit({
@@ -8,7 +10,7 @@ const imagekit = new ImageKit({
 
 export default imagekit;
 
-// Upload image function
+// ✅ ENHANCED: Upload image function with category support
 export const uploadImage = async (
   file: Express.Multer.File,
   fileName: string,
@@ -18,39 +20,47 @@ export const uploadImage = async (
     let transformationConfig;
     
     if (folder === 'profiles') {
-      // Special configuration for profile pictures - ✅ Fixed transformation type
       transformationConfig = {
         pre: 'q-90,f-auto', 
         post: [
           {
-            type: 'transformation' as const, // ✅ Fixed: Use literal type assertion
+            type: 'transformation' as const,
             value: 'w-300,h-300,c-force,bg-FFFFFF,r-max'
           }
         ]
       };
+    } else if (folder === 'categories') {
+      // ✅ NEW: Category-specific transformations for thumbnails
+      transformationConfig = {
+        pre: 'q-85,f-auto',
+        post: [
+          {
+            type: 'transformation' as const,
+            value: 'w-400,h-300,c-maintain_ratio,bg-FFFFFF'
+          }
+        ]
+      };
     } else {
-      // Default configuration for products - ✅ Fixed transformation type
+      // Default configuration for products
       transformationConfig = {
         pre: 'q-80,f-auto',
         post: [
           {
-            type: 'transformation' as const, // ✅ Fixed: Use literal type assertion
+            type: 'transformation' as const,
             value: 'w-800,h-800,c-maintain_ratio'
           }
         ]
       };
     }
 
-    // ✅ Fixed: Await the upload promise properly
     const result = await imagekit.upload({
       file: file.buffer,
       fileName: fileName,
-      folder: `ssecom/${folder}`,
+      folder: `ssecom/${folder}`, // Will create: ssecom/categories/
       useUniqueFileName: true,
       transformation: transformationConfig
     });
 
-    // ✅ Fixed: Return the actual properties from the upload response
     return {
       url: result.url,
       fileId: result.fileId
@@ -61,7 +71,7 @@ export const uploadImage = async (
   }
 };
 
-// Delete image function
+// Delete image function (unchanged)
 export const deleteImage = async (fileId: string): Promise<void> => {
   try {
     await imagekit.deleteFile(fileId);

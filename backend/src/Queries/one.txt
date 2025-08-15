@@ -101,3 +101,13 @@ CREATE INDEX IX_CartItems_AddedAt ON CartItems(addedAt DESC);
 
 -- Verify table creation
 SELECT * FROM CartItems;
+
+
+for adding images to categories
+
+-- Add imageUrl column to existing Categories table
+ALTER TABLE Categories 
+ADD imageUrl NVARCHAR(500);
+
+-- Update the column to allow NULL initially for existing categories
+-- Existing categories will use emoji fallbacks until images are added

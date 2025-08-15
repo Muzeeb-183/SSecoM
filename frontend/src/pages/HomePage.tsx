@@ -3,14 +3,16 @@ import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
-import { getImageForContext } from '../utils/imageOptimization';
+import { getImageForContext, ImageContext } from '../utils/imageOptimization';
 import RecentlyViewed from '../components/RecentlyViewed';
 
+// ✅ UPDATED: Category interface with imageUrl field
 interface Category {
   id: string;
   name: string;
   description: string;
   slug: string;
+  imageUrl?: string;
   productCount: number;
   recentProducts: number;
 }
@@ -41,6 +43,56 @@ interface HomepageData {
   };
 }
 
+// ✅ ENHANCED: Much larger and better looking CategoryImage component
+const CategoryImage: React.FC<{ 
+  category: Category; 
+  getCategoryEmoji: (name: string) => string; 
+  getImageForContext: (url: string, context: ImageContext) => string;
+}> = ({ category, getCategoryEmoji, getImageForContext }) => {
+  const [imageError, setImageError] = useState(false);
+  const [imageLoading, setImageLoading] = useState(true);
+
+  if (category.imageUrl && !imageError) {
+    return (
+      // ✅ MUCH LARGER: Increased from w-32 h-32 to w-40 h-40 (160px × 160px) with enhanced styling
+      <div className="w-40 h-40 mx-auto mb-6 rounded-2xl overflow-hidden border-3 border-orange-400/40 bg-gradient-to-br from-gray-800 to-gray-900 shadow-xl shadow-orange-500/30 hover:shadow-orange-500/50 transition-all duration-300 hover:scale-105">
+        {imageLoading && (
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-700 to-gray-800 animate-pulse">
+            <div className="text-4xl text-orange-400/60 animate-pulse">
+              {getCategoryEmoji(category.name)}
+            </div>
+          </div>
+        )}
+        <img
+          src={getImageForContext(category.imageUrl, 'card')} // ✅ Using 'card' instead of 'thumbnail' for higher quality
+          alt={category.name}
+          className={`w-full h-full object-cover hover:scale-110 transition-transform duration-500 ${
+            imageLoading ? 'opacity-0 absolute' : 'opacity-100'
+          }`}
+          loading="lazy"
+          onLoad={() => setImageLoading(false)}
+          onError={() => {
+            console.warn(`❌ Category image failed to load for: ${category.name}`);
+            setImageError(true);
+            setImageLoading(false);
+          }}
+        />
+        {/* ✅ Enhanced overlay gradient for better visual appeal */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
+      </div>
+    );
+  } else {
+    // ✅ ENHANCED: Much larger emoji with better styling
+    return (
+      <div className="w-40 h-40 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-orange-500/20 to-red-500/20 border-3 border-orange-400/40 flex items-center justify-center shadow-xl shadow-orange-500/30 hover:shadow-orange-500/50 transition-all duration-300 hover:scale-105">
+        <div className="text-8xl transform hover:scale-110 transition-transform duration-300 filter drop-shadow-lg">
+          {getCategoryEmoji(category.name)}
+        </div>
+      </div>
+    );
+  }
+};
+
 const HomePage: React.FC = memo(() => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -48,11 +100,10 @@ const HomePage: React.FC = memo(() => {
   const [isLoading, setIsLoading] = useState(true);
   const [imageLoadingStates, setImageLoadingStates] = useState<{[key: string]: boolean}>({});
   const [imageErrorStates, setImageErrorStates] = useState<{[key: string]: boolean}>({});
-  const [dataFetched, setDataFetched] = useState(false); // ✅ NEW: Track if data is already fetched
+  const [dataFetched, setDataFetched] = useState(false);
   
   const categoriesScrollRef = useRef<HTMLDivElement | null>(null);
 
-  // ✅ FIXED: Prevent state overwrite when images are already loaded
   const handleImageLoad = useCallback((productId: string) => {
     console.log(`✅ Image loaded successfully for product: ${productId}`);
     setImageLoadingStates(prev => ({ ...prev, [productId]: false }));
@@ -69,7 +120,6 @@ const HomePage: React.FC = memo(() => {
     setImageErrorStates(prev => ({ ...prev, [productId]: true }));
   }, []);
 
-  // ✅ CRITICAL FIX: Prevent unnecessary data fetching and state resets
   const fetchHomepageData = useCallback(async () => {
     if (dataFetched) {
       console.log('🛑 Data already fetched, skipping API call');
@@ -85,7 +135,7 @@ const HomePage: React.FC = memo(() => {
       
       if (data.success) {
         setHomepageData(data.data);
-        setDataFetched(true); // ✅ Mark as fetched
+        setDataFetched(true);
         
         const allProducts = [...data.data.featuredProducts, ...data.data.latestProducts];
         const uniqueProducts = allProducts.filter((product, index, self) => 
@@ -94,6 +144,8 @@ const HomePage: React.FC = memo(() => {
         
         console.log('🔍 Image URLs Debug:', {
           totalProducts: uniqueProducts.length,
+          totalCategories: data.data.categories.length,
+          categoriesWithImages: data.data.categories.filter((c: Category) => c.imageUrl).length,
           urlAnalysis: uniqueProducts.slice(0, 3).map(p => ({
             id: p.id,
             name: p.name,
@@ -103,7 +155,6 @@ const HomePage: React.FC = memo(() => {
           }))
         });
         
-        // ✅ FIXED: Only initialize loading states if not already set
         setImageLoadingStates(prevStates => {
           const newStates = { ...prevStates };
           const hasExistingStates = Object.keys(prevStates).length > 0;
@@ -144,15 +195,14 @@ const HomePage: React.FC = memo(() => {
     } finally {
       setIsLoading(false);
     }
-  }, [dataFetched]); // ✅ FIXED: Only depend on dataFetched
+  }, [dataFetched]);
 
-  // ✅ FIXED: Only fetch once when component mounts
   useEffect(() => {
     if (!dataFetched && !homepageData) {
       console.log('🚀 Component mounted, fetching data...');
       fetchHomepageData();
     }
-  }, []); // ✅ FIXED: Empty dependency array to run only once
+  }, []);
 
   const handleProductClick = useCallback((product: Product) => {
     console.log(`🔗 Product view: ${product.name} - ${product.categoryName}`);
@@ -160,7 +210,7 @@ const HomePage: React.FC = memo(() => {
   }, [navigate]);
 
   const handleCategoryClick = useCallback((category: Category) => {
-    console.log(`Category clicked: ${category.name}`);
+    console.log(`Category clicked: ${category.name}`, category.imageUrl ? 'with custom image' : 'with emoji');
     navigate(`/category/${category.id}`);
   }, [navigate]);
 
@@ -169,7 +219,7 @@ const HomePage: React.FC = memo(() => {
     direction: 'left' | 'right'
   ) => {
     if (ref.current) {
-      const scrollAmount = 300;
+      const scrollAmount = 320; // ✅ Increased scroll amount for larger cards
       const scrollDirection = direction === 'left' ? -scrollAmount : scrollAmount;
       ref.current.scrollBy({ left: scrollDirection, behavior: 'smooth' });
     }
@@ -202,7 +252,6 @@ const HomePage: React.FC = memo(() => {
     );
   }, []);
 
-  // ✅ NEW: Manual refresh function for the retry button
   const handleManualRefresh = useCallback(async () => {
     console.log('🔄 Manual refresh triggered');
     setDataFetched(false);
@@ -232,7 +281,7 @@ const HomePage: React.FC = memo(() => {
           <h2 className="text-3xl font-bold text-orange-200 mb-4">Something Exploded!</h2>
           <p className="text-orange-400 mb-6">The fire deals are temporarily down</p>
           <button
-            onClick={handleManualRefresh} // ✅ Use manual refresh
+            onClick={handleManualRefresh}
             className="bg-gradient-to-r from-red-600 to-orange-600 text-white px-8 py-4 rounded-2xl hover:from-red-700 hover:to-orange-700 transition-all transform hover:scale-105 font-bold border-2 border-orange-500"
           >
             🔥 Reignite the Fire
@@ -253,27 +302,32 @@ const HomePage: React.FC = memo(() => {
         
         <RecentlyViewed />
         
-        {/* Categories Section */}
+        {/* ✅ ENHANCED: Categories Section with much larger images */}
         {homepageData.categories.length > 0 && (
-          <div className="mb-16">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-3xl md:text-4xl font-bold text-orange-200">
-                🔥 Fire Categories
-              </h2>
-              <div className="flex space-x-2">
+          <div className="mb-20"> {/* ✅ Increased bottom margin for larger cards */}
+            <div className="flex items-center justify-between mb-10"> {/* ✅ Increased margin for better spacing */}
+              <div>
+                <h2 className="text-4xl md:text-5xl font-bold text-orange-200 mb-2"> {/* ✅ Larger title */}
+                  🔥 Fire Categories
+                </h2>
+                <p className="text-lg text-orange-400/80">
+                  Discover amazing deals in every category
+                </p>
+              </div>
+              <div className="flex space-x-3"> {/* ✅ Increased button spacing */}
                 <button
                   onClick={() => scrollContainer(categoriesScrollRef, 'left')}
-                  className="bg-gray-800 hover:bg-gray-700 text-orange-300 p-3 rounded-full border-2 border-orange-500/50 transition-colors"
+                  className="bg-gray-800 hover:bg-gray-700 text-orange-300 p-4 rounded-full border-2 border-orange-500/50 transition-all hover:border-orange-400 hover:scale-110 shadow-lg hover:shadow-orange-500/30"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"> {/* ✅ Larger icons */}
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
                 <button
                   onClick={() => scrollContainer(categoriesScrollRef, 'right')}
-                  className="bg-gray-800 hover:bg-gray-700 text-orange-300 p-3 rounded-full border-2 border-orange-500/50 transition-colors"
+                  className="bg-gray-800 hover:bg-gray-700 text-orange-300 p-4 rounded-full border-2 border-orange-500/50 transition-all hover:border-orange-400 hover:scale-110 shadow-lg hover:shadow-orange-500/30"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"> {/* ✅ Larger icons */}
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </button>
@@ -282,7 +336,7 @@ const HomePage: React.FC = memo(() => {
             
             <div 
               ref={categoriesScrollRef}
-              className="flex overflow-x-auto space-x-6 pb-4 scrollbar-thin scrollbar-thumb-orange-500 scrollbar-track-gray-800"
+              className="flex overflow-x-auto space-x-8 pb-6 scrollbar-thin scrollbar-thumb-orange-500 scrollbar-track-gray-800" // ✅ Increased spacing
               style={{
                 scrollbarWidth: 'thin',
                 scrollbarColor: '#f97316 #374151'
@@ -291,27 +345,34 @@ const HomePage: React.FC = memo(() => {
               {homepageData.categories.map((category) => (
                 <div 
                   key={category.id}
-                  className="flex-shrink-0 w-56 bg-gradient-to-br from-gray-800 to-black rounded-2xl p-6 shadow-xl shadow-orange-500/20 hover:shadow-orange-500/40 transition-all duration-300 cursor-pointer transform hover:-translate-y-2 border border-orange-500/30 hover:border-orange-400"
+                  // ✅ MUCH LARGER: Increased from w-64 to w-72 with enhanced styling
+                  className="flex-shrink-0 w-72 bg-gradient-to-br from-gray-800 via-gray-900 to-black rounded-3xl p-8 shadow-2xl shadow-orange-500/25 hover:shadow-orange-500/50 transition-all duration-500 cursor-pointer transform hover:-translate-y-3 hover:scale-105 border border-orange-500/30 hover:border-orange-400/60 backdrop-blur-sm"
                   onClick={() => handleCategoryClick(category)}
                 >
                   <div className="text-center">
-                    <div className="text-5xl mb-4 transform hover:scale-125 transition-transform">
-                      {getCategoryEmoji(category.name)}
-                    </div>
-                    <h3 className="text-xl font-bold text-orange-200 mb-2">
+                    {/* ✅ ENHANCED: Much larger and better looking images */}
+                    <CategoryImage 
+                      category={category} 
+                      getCategoryEmoji={getCategoryEmoji} 
+                      getImageForContext={getImageForContext}
+                    />
+                    
+                    <h3 className="text-2xl font-bold text-orange-200 mb-3 hover:text-orange-100 transition-colors"> {/* ✅ Larger title */}
                       {category.name}
                     </h3>
-                    <p className="text-sm text-orange-400 mb-3">
+                    <p className="text-sm text-orange-400/90 mb-4 leading-relaxed"> {/* ✅ Better text styling */}
                       {category.description}
                     </p>
-                    <p className="text-sm text-orange-300 font-semibold">
-                      🔥 {category.productCount} products
-                    </p>
-                    {category.recentProducts > 0 && (
-                      <div className="mt-2 inline-block bg-gradient-to-r from-red-600 to-orange-600 text-white text-xs px-3 py-1 rounded-full font-bold">
-                        💥 +{category.recentProducts} NEW
-                      </div>
-                    )}
+                    <div className="flex flex-col space-y-2">
+                      <p className="text-base text-orange-300 font-bold flex items-center justify-center"> {/* ✅ Enhanced product count */}
+                        🔥 {category.productCount} products
+                      </p>
+                      {category.recentProducts > 0 && (
+                        <div className="inline-block bg-gradient-to-r from-red-600 to-orange-600 text-white text-sm px-4 py-2 rounded-full font-bold shadow-lg animate-pulse"> {/* ✅ Enhanced NEW badge */}
+                          💥 +{category.recentProducts} NEW
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -319,7 +380,7 @@ const HomePage: React.FC = memo(() => {
           </div>
         )}
 
-        {/* ✅ COMPLETELY STABLE: Image Loading with Persistent States */}
+        {/* Products Section - Unchanged */}
         {uniqueProducts.length > 0 && (
           <div id="all-products" className="mb-16">
             <div className="text-center mb-12">
@@ -333,7 +394,7 @@ const HomePage: React.FC = memo(() => {
             
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
               {uniqueProducts.map((product) => {
-                const isLoading = imageLoadingStates[product.id] ?? true; // ✅ Default to true if not set
+                const isLoading = imageLoadingStates[product.id] ?? true;
                 const hasError = imageErrorStates[product.id] ?? false;
                 const hasValidUrl = hasValidImageUrl(product.imageUrl);
 
@@ -343,11 +404,9 @@ const HomePage: React.FC = memo(() => {
                     className="bg-gradient-to-br from-gray-800 to-black rounded-2xl overflow-hidden shadow-xl shadow-orange-500/20 hover:shadow-orange-500/40 transition-all duration-300 cursor-pointer transform hover:-translate-y-2 border border-orange-500/30 hover:border-orange-400"
                     onClick={() => handleProductClick(product)}
                   >
-                    {/* ✅ STABLE: Image Loading with Persistent States */}
                     <div className="relative overflow-hidden">
                       {hasValidUrl && !hasError ? (
                         <>
-                          {/* Loading Skeleton - only show if actually loading */}
                           {isLoading && (
                             <div className="absolute inset-0 bg-gradient-to-br from-gray-700 to-gray-800 animate-pulse flex flex-col items-center justify-center z-10">
                               <div className="text-4xl text-orange-400/50 mb-2">
@@ -362,7 +421,6 @@ const HomePage: React.FC = memo(() => {
                             </div>
                           )}
                           
-                          {/* ✅ STABLE: Direct image loading */}
                           <img 
                             src={getImageForContext(product.imageUrl, 'card')}
                             alt={product.name}
@@ -378,7 +436,6 @@ const HomePage: React.FC = memo(() => {
                           />
                         </>
                       ) : (
-                        // Enhanced fallback UI
                         <div className="w-full h-48 bg-gradient-to-br from-gray-600 to-gray-700 flex flex-col items-center justify-center border-2 border-dashed border-orange-500/30 relative overflow-hidden">
                           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-orange-500/5 to-transparent animate-pulse"></div>
                           <span className="text-4xl mb-2 relative z-10">{getCategoryEmoji(product.categoryName)}</span>
@@ -388,19 +445,16 @@ const HomePage: React.FC = memo(() => {
                         </div>
                       )}
                       
-                      {/* Discount Badge */}
                       {product.originalPrice && product.originalPrice > product.price && (
                         <div className="absolute top-3 right-3 bg-gradient-to-r from-red-600 to-orange-600 text-white px-3 py-1 rounded-full text-sm font-bold border border-yellow-500 shadow-lg z-20">
                           🔥 {calculateDiscount(product.originalPrice, product.price)}% OFF
                         </div>
                       )}
 
-                      {/* Category Badge */}
                       <div className="absolute top-3 left-3 bg-gradient-to-r from-orange-600 to-red-600 text-white px-3 py-1 rounded-full text-xs font-bold border border-yellow-500 z-20">
                         {product.categoryName}
                       </div>
 
-                      {/* ✅ Debug info (only in development) */}
                       {process.env.NODE_ENV === 'development' && (
                         <div className="absolute bottom-2 right-2 bg-black/80 text-white px-2 py-1 rounded text-xs z-20">
                           {isLoading ? '🔄' : '✅'} {hasError ? '❌' : ''}
@@ -419,7 +473,6 @@ const HomePage: React.FC = memo(() => {
                         </p>
                       )}
                       
-                      {/* Pricing */}
                       <div className="mb-4">
                         <div className="flex items-center space-x-3 mb-2">
                           {product.originalPrice && product.originalPrice > product.price && (
@@ -439,7 +492,6 @@ const HomePage: React.FC = memo(() => {
                         )}
                       </div>
 
-                      {/* Tags */}
                       {product.tags && (
                         <div className="flex flex-wrap gap-2">
                           {product.tags.split(',').slice(0, 2).map((tag, tagIndex) => (

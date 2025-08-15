@@ -324,58 +324,44 @@ app.get('/api/auth/verify', async (req: Request, res: Response): Promise<void> =
 });
 
   // Homepage data endpoint
-  app.get('/api/homepage', async (req: Request, res: Response): Promise<void> => {
-    try {
-      const pool = await getDbConnection();
+  // ENHANCED HOMEPAGE ENDPOINT WITH DEBUGGING
+app.get('/api/homepage', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const pool = await getDbConnection();
 
-      // Get all active categories with product counts
-      const categories = await pool.request()
-        .query(`
+    console.log('🔍 Executing categories query...');
+    
+    // ✅ ENHANCED: Add debug logging
+    const categories = await pool.request()
+      .query(`
+        SELECT 
+          c.id,
+          c.name,
+          c.description,
+          c.slug,
+          c.imageUrl,
+          COUNT(p.id) as productCount,
+          COALESCE(SUM(CASE WHEN DATEDIFF(day, p.createdAt, GETDATE()) <= 7 THEN 1 ELSE 0 END), 0) as recentProducts
+        FROM Categories c
+        LEFT JOIN Products p ON c.id = p.categoryId AND p.status = 'active'
+        WHERE c.status = 'active'
+        GROUP BY c.id, c.name, c.description, c.slug, c.imageUrl
+        ORDER BY productCount DESC, c.name ASC
+      `);
+
+    // ✅ DEBUG: Log the actual SQL results
+    console.log('📊 Categories Query Results:');
+    categories.recordset.forEach(cat => {
+      console.log(`  - ${cat.name}: imageUrl = "${cat.imageUrl || 'NULL'}"`);
+    });
+    console.log(`🔍 Total categories: ${categories.recordset.length}`);
+    console.log(`📸 Categories with images: ${categories.recordset.filter(c => c.imageUrl).length}`);
+
+    // Keep existing product queries unchanged
+    const featuredProducts = await pool.request()
+      .query(`
+        WITH RankedProducts AS (
           SELECT 
-            c.id,
-            c.name,
-            c.description,
-            c.slug,
-            COUNT(p.id) as productCount,
-            COALESCE(SUM(CASE WHEN DATEDIFF(day, p.createdAt, GETDATE()) <= 7 THEN 1 ELSE 0 END), 0) as recentProducts
-          FROM Categories c
-          LEFT JOIN Products p ON c.id = p.categoryId AND p.status = 'active'
-          WHERE c.status = 'active'
-          GROUP BY c.id, c.name, c.description, c.slug
-          ORDER BY productCount DESC, c.name ASC
-        `);
-
-      // Get featured products (latest products from each category)
-      const featuredProducts = await pool.request()
-        .query(`
-          WITH RankedProducts AS (
-            SELECT 
-              p.id,
-              p.name,
-              p.description,
-              p.price,
-              p.originalPrice,
-              p.affiliateLink,
-              p.imageUrl,
-              p.tags,
-              p.createdAt,
-              c.name as categoryName,
-              c.id as categoryId,
-              ROW_NUMBER() OVER (PARTITION BY c.id ORDER BY p.createdAt DESC) as rn
-            FROM Products p
-            INNER JOIN Categories c ON p.categoryId = c.id
-            WHERE p.status = 'active' AND c.status = 'active'
-          )
-          SELECT TOP 6 *
-          FROM RankedProducts
-          WHERE rn = 1
-          ORDER BY createdAt DESC
-        `);
-
-      // Get latest products (most recent across all categories)
-      const latestProducts = await pool.request()
-        .query(`
-          SELECT TOP 8
             p.id,
             p.name,
             p.description,
@@ -386,40 +372,64 @@ app.get('/api/auth/verify', async (req: Request, res: Response): Promise<void> =
             p.tags,
             p.createdAt,
             c.name as categoryName,
-            c.id as categoryId
+            c.id as categoryId,
+            ROW_NUMBER() OVER (PARTITION BY c.id ORDER BY p.createdAt DESC) as rn
           FROM Products p
           INNER JOIN Categories c ON p.categoryId = c.id
           WHERE p.status = 'active' AND c.status = 'active'
-          ORDER BY p.createdAt DESC
-        `);
+        )
+        SELECT TOP 6 *
+        FROM RankedProducts
+        WHERE rn = 1
+        ORDER BY createdAt DESC
+      `);
 
-      // Get platform stats
-      const stats = await pool.request()
-        .query(`
-          SELECT 
-            (SELECT COUNT(*) FROM Users) as totalUsers,
-            (SELECT COUNT(*) FROM Products WHERE status = 'active') as totalProducts,
-            (SELECT COUNT(*) FROM Categories WHERE status = 'active') as totalCategories,
-            (SELECT COALESCE(SUM(CAST(price as FLOAT)), 0) FROM Products WHERE status = 'active') as totalValue
-        `);
+    const latestProducts = await pool.request()
+      .query(`
+        SELECT TOP 8
+          p.id,
+          p.name,
+          p.description,
+          p.price,
+          p.originalPrice,
+          p.affiliateLink,
+          p.imageUrl,
+          p.tags,
+          p.createdAt,
+          c.name as categoryName,
+          c.id as categoryId
+        FROM Products p
+        INNER JOIN Categories c ON p.categoryId = c.id
+        WHERE p.status = 'active' AND c.status = 'active'
+        ORDER BY p.createdAt DESC
+      `);
 
-      console.log('✅ Homepage data fetched successfully');
+    const stats = await pool.request()
+      .query(`
+        SELECT 
+          (SELECT COUNT(*) FROM Users) as totalUsers,
+          (SELECT COUNT(*) FROM Products WHERE status = 'active') as totalProducts,
+          (SELECT COUNT(*) FROM Categories WHERE status = 'active') as totalCategories,
+          (SELECT COALESCE(SUM(CAST(price as FLOAT)), 0) FROM Products WHERE status = 'active') as totalValue
+      `);
 
-      res.json({
-        success: true,
-        data: {
-          categories: categories.recordset,
-          featuredProducts: featuredProducts.recordset,
-          latestProducts: latestProducts.recordset,
-          stats: stats.recordset[0]
-        }
-      });
+    console.log('✅ Homepage data fetched successfully with category images');
 
-    } catch (error) {
-      console.error('❌ Get homepage data error:', error);
-      res.status(500).json({ success: false, error: 'Failed to fetch homepage data' });
-    }
-  });
+    res.json({
+      success: true,
+      data: {
+        categories: categories.recordset,
+        featuredProducts: featuredProducts.recordset,
+        latestProducts: latestProducts.recordset,
+        stats: stats.recordset[0]
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get homepage data error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch homepage data' });
+  }
+});
 
 
 // [Keep all your other auth endpoints: logout, refresh, grant-admin, revoke-admin, users - they're correct]
@@ -792,9 +802,206 @@ app.post('/api/admin/upload-images', upload.array('images', 3), async (req: Requ
   }
 });
 
-// ========== CATEGORY MANAGEMENT ENDPOINTS ==========
+// backend/src/index.ts - ENHANCED CATEGORY ENDPOINTS
 
-// Get all categories
+// ========== ENHANCED CATEGORY MANAGEMENT WITH IMAGE SUPPORT ==========
+
+// Create category endpoint with image upload support
+app.post('/api/admin/categories', upload.single('categoryImage'), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { name, description } = req.body;
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Authorization required' });
+      return;
+    }
+
+    const token = extractTokenFromHeader(authHeader);
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Invalid authorization header format' });
+      return;
+    }
+
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') {
+      res.status(403).json({ success: false, error: 'Admin access required' });
+      return;
+    }
+
+    if (!name) {
+      res.status(400).json({ success: false, error: 'Category name is required' });
+      return;
+    }
+
+    const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+    // Handle optional image upload
+    let imageUrl = null;
+    let imageFileId = null;
+
+    if (req.file) {
+      try {
+        console.log(`📸 Uploading category image for: ${name}`);
+        const fileName = `category_${slug}_${Date.now()}`;
+        
+        // ✅ Upload to categories folder with specific transformations
+        const uploadResult = await uploadImage(req.file, fileName, 'categories');
+        imageUrl = uploadResult.url;
+        imageFileId = uploadResult.fileId;
+        
+        console.log(`✅ Category image uploaded: ${uploadResult.url}`);
+      } catch (uploadError) {
+        console.error('❌ Category image upload failed:', uploadError);
+        res.status(500).json({ success: false, error: 'Failed to upload category image' });
+        return;
+      }
+    }
+
+    const pool = await getDbConnection();
+    const result = await pool.request()
+      .input('name', sql.NVarChar(255), name)
+      .input('description', sql.NVarChar(500), description || '')
+      .input('slug', sql.NVarChar(255), slug)
+      .input('imageUrl', sql.NVarChar(500), imageUrl)
+      .query(`
+        INSERT INTO Categories (name, description, slug, imageUrl)
+        OUTPUT INSERTED.id, INSERTED.name, INSERTED.description, INSERTED.slug, INSERTED.imageUrl, INSERTED.createdAt
+        VALUES (@name, @description, @slug, @imageUrl)
+      `);
+
+    console.log('✅ Category created:', name, imageUrl ? 'with image' : 'without image');
+    res.json({ 
+      success: true, 
+      message: 'Category created successfully',
+      category: result.recordset[0]
+    });
+
+  } catch (error) {
+    console.error('❌ Create category error:', error);
+    res.status(500).json({ success: false, error: 'Failed to create category' });
+  }
+});
+
+// Update category endpoint with image support
+app.put('/api/admin/categories/:id', upload.single('categoryImage'), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { name, description, removeImage } = req.body;
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Authorization required' });
+      return;
+    }
+
+    const token = extractTokenFromHeader(authHeader);
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Invalid authorization header format' });
+      return;
+    }
+
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') {
+      res.status(403).json({ success: false, error: 'Admin access required' });
+      return;
+    }
+
+    if (!name) {
+      res.status(400).json({ success: false, error: 'Category name is required' });
+      return;
+    }
+
+    const pool = await getDbConnection();
+
+    // Get existing category to handle image updates
+    const existingCategoryResult = await pool.request()
+      .input('id', sql.NVarChar(50), id)
+      .query('SELECT imageUrl FROM Categories WHERE id = @id');
+
+    if (existingCategoryResult.recordset.length === 0) {
+      res.status(404).json({ success: false, error: 'Category not found' });
+      return;
+    }
+
+    const existingCategory = existingCategoryResult.recordset[0];
+    let newImageUrl = existingCategory.imageUrl; // Keep existing by default
+
+    // Handle image removal
+    if (removeImage === 'true' && existingCategory.imageUrl) {
+      try {
+        // Extract fileId from ImageKit URL to delete it
+        const urlParts = existingCategory.imageUrl.split('/');
+        const fileIdPart = urlParts[urlParts.length - 1];
+        const fileId = fileIdPart.split('?')[0]; // Remove transformation parameters
+        
+        await deleteImage(fileId);
+        console.log(`🗑️ Deleted old category image: ${fileId}`);
+      } catch (deleteError) {
+        console.warn('⚠️ Failed to delete old category image:', deleteError);
+      }
+      newImageUrl = null;
+    }
+
+    // Handle new image upload
+    if (req.file) {
+      // Delete old image if it exists
+      if (existingCategory.imageUrl) {
+        try {
+          const urlParts = existingCategory.imageUrl.split('/');
+          const fileIdPart = urlParts[urlParts.length - 1];
+          const fileId = fileIdPart.split('?')[0];
+          
+          await deleteImage(fileId);
+          console.log(`🗑️ Replaced old category image: ${fileId}`);
+        } catch (deleteError) {
+          console.warn('⚠️ Failed to delete old category image:', deleteError);
+        }
+      }
+
+      try {
+        console.log(`📸 Uploading new category image for: ${name}`);
+        const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        const fileName = `category_${slug}_${Date.now()}`;
+        
+        const uploadResult = await uploadImage(req.file, fileName, 'categories');
+        newImageUrl = uploadResult.url;
+        
+        console.log(`✅ New category image uploaded: ${uploadResult.url}`);
+      } catch (uploadError) {
+        console.error('❌ New category image upload failed:', uploadError);
+        res.status(500).json({ success: false, error: 'Failed to upload new category image' });
+        return;
+      }
+    }
+
+    const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+    const result = await pool.request()
+      .input('id', sql.NVarChar(50), id)
+      .input('name', sql.NVarChar(255), name)
+      .input('description', sql.NVarChar(500), description || '')
+      .input('slug', sql.NVarChar(255), slug)
+      .input('imageUrl', sql.NVarChar(500), newImageUrl)
+      .query(`
+        UPDATE Categories 
+        SET name = @name, description = @description, slug = @slug, imageUrl = @imageUrl, updatedAt = GETDATE()
+        WHERE id = @id
+      `);
+
+    console.log('✅ Category updated:', name, newImageUrl ? 'with image' : 'without image');
+    res.json({ 
+      success: true, 
+      message: 'Category updated successfully' 
+    });
+
+  } catch (error) {
+    console.error('❌ Update category error:', error);
+    res.status(500).json({ success: false, error: 'Failed to update category' });
+  }
+});
+
+// Enhanced get categories endpoint to include imageUrl
 app.get('/api/admin/categories', async (req: Request, res: Response): Promise<void> => {
   try {
     const authHeader = req.headers.authorization;
@@ -817,7 +1024,7 @@ app.get('/api/admin/categories', async (req: Request, res: Response): Promise<vo
 
     const pool = await getDbConnection();
     const result = await pool.request()
-      .query('SELECT id, name, description, slug, status, createdAt FROM Categories ORDER BY name ASC');
+      .query('SELECT id, name, description, slug, imageUrl, status, createdAt FROM Categories ORDER BY name ASC');
 
     res.json({ 
       success: true, 
@@ -830,121 +1037,7 @@ app.get('/api/admin/categories', async (req: Request, res: Response): Promise<vo
   }
 });
 
-// Create category
-app.post('/api/admin/categories', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { name, description } = req.body;
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.status(401).json({ success: false, error: 'Authorization required' });
-      return;
-    }
-
-    const token = extractTokenFromHeader(authHeader);
-    if (!token) {
-      res.status(401).json({ success: false, error: 'Invalid authorization header format' });
-      return;
-    }
-
-    const decoded = verifyToken(token);
-    if (decoded.role !== 'admin') {
-      res.status(403).json({ success: false, error: 'Admin access required' });
-      return;
-    }
-
-    if (!name) {
-      res.status(400).json({ success: false, error: 'Category name is required' });
-      return;
-    }
-
-    const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-
-    const pool = await getDbConnection();
-    const result = await pool.request()
-      .input('name', sql.NVarChar(255), name)
-      .input('description', sql.NVarChar(500), description || '')
-      .input('slug', sql.NVarChar(255), slug)
-      .query(`
-        INSERT INTO Categories (name, description, slug)
-        OUTPUT INSERTED.id, INSERTED.name, INSERTED.description, INSERTED.slug, INSERTED.createdAt
-        VALUES (@name, @description, @slug)
-      `);
-
-    console.log('✅ Category created:', name);
-    res.json({ 
-      success: true, 
-      message: 'Category created successfully',
-      category: result.recordset[0]
-    });
-
-  } catch (error) {
-    console.error('❌ Create category error:', error);
-    res.status(500).json({ success: false, error: 'Failed to create category' });
-  }
-});
-
-// Update category
-app.put('/api/admin/categories/:id', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { id } = req.params;
-    const { name, description } = req.body;
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.status(401).json({ success: false, error: 'Authorization required' });
-      return;
-    }
-
-    const token = extractTokenFromHeader(authHeader);
-    if (!token) {
-      res.status(401).json({ success: false, error: 'Invalid authorization header format' });
-      return;
-    }
-
-    const decoded = verifyToken(token);
-    if (decoded.role !== 'admin') {
-      res.status(403).json({ success: false, error: 'Admin access required' });
-      return;
-    }
-
-    if (!name) {
-      res.status(400).json({ success: false, error: 'Category name is required' });
-      return;
-    }
-
-    const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-
-    const pool = await getDbConnection();
-    const result = await pool.request()
-      .input('id', sql.NVarChar(50), id)
-      .input('name', sql.NVarChar(255), name)
-      .input('description', sql.NVarChar(500), description || '')
-      .input('slug', sql.NVarChar(255), slug)
-      .query(`
-        UPDATE Categories 
-        SET name = @name, description = @description, slug = @slug, updatedAt = GETDATE()
-        WHERE id = @id
-      `);
-
-    if (result.rowsAffected[0] === 0) {
-      res.status(404).json({ success: false, error: 'Category not found' });
-      return;
-    }
-
-    console.log('✅ Category updated:', name);
-    res.json({ 
-      success: true, 
-      message: 'Category updated successfully' 
-    });
-
-  } catch (error) {
-    console.error('❌ Update category error:', error);
-    res.status(500).json({ success: false, error: 'Failed to update category' });
-  }
-});
-
-// Delete category
+// Enhanced delete category endpoint with image cleanup
 app.delete('/api/admin/categories/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
@@ -969,7 +1062,33 @@ app.delete('/api/admin/categories/:id', async (req: Request, res: Response): Pro
 
     const pool = await getDbConnection();
     
-    // First delete all products in this category
+    // Get category image before deletion for cleanup
+    const categoryResult = await pool.request()
+      .input('id', sql.NVarChar(50), id)
+      .query('SELECT imageUrl FROM Categories WHERE id = @id');
+
+    if (categoryResult.recordset.length === 0) {
+      res.status(404).json({ success: false, error: 'Category not found' });
+      return;
+    }
+
+    const category = categoryResult.recordset[0];
+
+    // Delete category image from ImageKit if it exists
+    if (category.imageUrl) {
+      try {
+        const urlParts = category.imageUrl.split('/');
+        const fileIdPart = urlParts[urlParts.length - 1];
+        const fileId = fileIdPart.split('?')[0];
+        
+        await deleteImage(fileId);
+        console.log(`🗑️ Deleted category image: ${fileId}`);
+      } catch (deleteError) {
+        console.warn('⚠️ Failed to delete category image:', deleteError);
+      }
+    }
+    
+    // First delete all products in this category (existing logic)
     await pool.request()
       .input('categoryId', sql.NVarChar(50), id)
       .query('DELETE FROM Products WHERE categoryId = @categoryId');
@@ -979,13 +1098,8 @@ app.delete('/api/admin/categories/:id', async (req: Request, res: Response): Pro
       .input('id', sql.NVarChar(50), id)
       .query('DELETE FROM Categories WHERE id = @id');
 
-    if (result.rowsAffected[0] === 0) {
-      res.status(404).json({ success: false, error: 'Category not found' });
-      return;
-    }
-
-    console.log('✅ Category deleted:', id);
-    res.json({ success: true, message: 'Category and associated products deleted successfully' });
+    console.log('✅ Category and image deleted:', id);
+    res.json({ success: true, message: 'Category, associated products, and images deleted successfully' });
 
   } catch (error) {
     console.error('❌ Delete category error:', error);
@@ -993,6 +1107,7 @@ app.delete('/api/admin/categories/:id', async (req: Request, res: Response): Pro
   }
 });
 
+// Update homepage endpoint to include category images
 
 // ========== PRODUCT MANAGEMENT ENDPOINTS ==========
 

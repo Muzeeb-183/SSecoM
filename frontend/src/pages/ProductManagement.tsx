@@ -4,12 +4,13 @@ import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import { getImageForContext } from '../utils/imageOptimization';
 
-
+// ✅ UPDATED: Category interface with imageUrl field
 interface Category {
   id: string;
   name: string;
   description: string;
   slug: string;
+  imageUrl?: string; // ✅ NEW: Add imageUrl field for category images
   status: string;
   createdAt: string;
 }
@@ -34,25 +35,101 @@ interface ProductButton {
   link: string;
 }
 
-// ✅ Updated ProductFormData interface
 interface ProductFormData {
   categoryId: string;
   name: string;
   description: string;
   price: string;
   originalPrice: string;
-  uploadedImages: { url: string; fileId: string }[]; // New: Store uploaded image data
+  uploadedImages: { url: string; fileId: string }[];
   button1: ProductButton;
   button2: ProductButton;
   button3: ProductButton;
   tags: string;
 }
 
-// ✅ Updated ImageUploadSection component with token prop
+// ✅ NEW: Category image upload component
+const CategoryImageUpload: React.FC<{
+  selectedImage: File | null;
+  currentImageUrl?: string;
+  onImageChange: (file: File | null) => void;
+  onRemoveImage: () => void;
+}> = ({ selectedImage, currentImageUrl, onImageChange, onRemoveImage }) => {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedImage) {
+      const url = URL.createObjectURL(selectedImage);
+      setPreviewUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setPreviewUrl(null);
+    }
+  }, [selectedImage]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) { // 2MB limit
+        toast.error('Category image must be less than 2MB');
+        return;
+      }
+      onImageChange(file);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-lg p-4 border-l-4 border-green-500">
+      <h4 className="text-lg font-semibold text-gray-800 mb-4">🖼️ Category Image</h4>
+      
+      {/* Current or Preview Image */}
+      {(previewUrl || currentImageUrl) && (
+        <div className="mb-4 text-center">
+          <img
+            src={previewUrl || getImageForContext(currentImageUrl!, 'thumbnail')}
+            alt="Category preview"
+            className="w-32 h-24 object-cover rounded-lg border mx-auto"
+          />
+          <button
+            type="button"
+            onClick={onRemoveImage}
+            className="mt-2 text-red-600 text-sm hover:underline"
+          >
+            🗑️ Remove Image
+          </button>
+        </div>
+      )}
+      
+      {/* Upload Input */}
+      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+        <input
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          className="hidden"
+          id="category-image-upload"
+        />
+        <label 
+          htmlFor="category-image-upload" 
+          className="cursor-pointer"
+        >
+          <div className="text-gray-400 mb-2">
+            📁 {(previewUrl || currentImageUrl) ? 'Change Image' : 'Upload Category Image'}
+          </div>
+          <div className="text-sm text-gray-500">
+            PNG, JPG up to 2MB • Recommended: 400x300px
+          </div>
+        </label>
+      </div>
+    </div>
+  );
+};
+
+// Product Image Upload Section (unchanged)
 const ImageUploadSection: React.FC<{
   uploadedImages: { url: string; fileId: string }[];
   onImagesChange: (images: { url: string; fileId: string }[]) => void;
-  token: string; // Added token prop
+  token: string;
 }> = ({ uploadedImages, onImagesChange, token }) => {
   const [uploading, setUploading] = useState(false);
 
@@ -75,7 +152,7 @@ const ImageUploadSection: React.FC<{
       const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/upload-images`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}` // ✅ Now accessible via props
+          'Authorization': `Bearer ${token}`
         },
         body: formData
       });
@@ -99,8 +176,6 @@ const ImageUploadSection: React.FC<{
 
   const removeImage = async (index: number) => {
     const imageToRemove = uploadedImages[index];
-    
-    // Optionally delete from ImageKit (or keep for later cleanup)
     const updatedImages = uploadedImages.filter((_, i) => i !== index);
     onImagesChange(updatedImages);
     toast.success('Image removed');
@@ -110,7 +185,6 @@ const ImageUploadSection: React.FC<{
     <div className="bg-white rounded-lg p-4 border-l-4 border-indigo-500">
       <h4 className="text-lg font-semibold text-gray-800 mb-4">📸 Product Images</h4>
       
-      {/* Image Upload Area */}
       <div className="mb-4">
         <label className="block text-sm font-medium text-gray-700 mb-2">
           🖼️ Upload Images <span className="text-red-500">* (1-3 images required)</span>
@@ -141,13 +215,12 @@ const ImageUploadSection: React.FC<{
         </div>
       </div>
 
-      {/* Uploaded Images Preview */}
       {uploadedImages.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {uploadedImages.map((image, index) => (
             <div key={index} className="relative">
               <img
-                src={getImageForContext(image.url, 'thumbnail')} // ✅ Optimized thumbnails
+                src={getImageForContext(image.url, 'thumbnail')}
                 alt={`Product ${index + 1}`}
                 className="w-full h-32 object-cover rounded-lg border"
                 loading="lazy"
@@ -177,15 +250,15 @@ const ProductManagement: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   
-  // Category form state
+  // ✅ ENHANCED: Category form state with image support
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [categoryForm, setCategoryForm] = useState({
     name: '',
-    description: ''
+    description: '',
+    categoryImage: null as File | null // ✅ NEW: Add image file state
   });
 
-  // ✅ Enhanced Product form state with correct structure
   const [showProductForm, setShowProductForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productForm, setProductForm] = useState<ProductFormData>({
@@ -194,14 +267,13 @@ const ProductManagement: React.FC = () => {
     description: '',
     price: '',
     originalPrice: '',
-    uploadedImages: [], // ✅ Using new structure
+    uploadedImages: [],
     button1: { name: '', link: '' },
     button2: { name: '', link: '' },
     button3: { name: '', link: '' },
     tags: ''
   });
 
-  // Fetch categories
   const fetchCategories = async () => {
     try {
       setIsLoading(true);
@@ -226,7 +298,6 @@ const ProductManagement: React.FC = () => {
     }
   };
 
-  // Fetch products
   const fetchProducts = async () => {
     try {
       setIsLoading(true);
@@ -256,7 +327,7 @@ const ProductManagement: React.FC = () => {
     fetchProducts();
   }, []);
 
-  // Handle category submission (create/update)
+  // ✅ ENHANCED: Category form submission with image support
   const handleCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -265,19 +336,33 @@ const ProductManagement: React.FC = () => {
         ? `${import.meta.env.VITE_API_URL}/api/admin/categories/${editingCategory.id}`
         : `${import.meta.env.VITE_API_URL}/api/admin/categories`;
       
+      // ✅ NEW: Create FormData for file upload
+      const formData = new FormData();
+      formData.append('name', categoryForm.name);
+      formData.append('description', categoryForm.description);
+      
+      if (categoryForm.categoryImage) {
+        formData.append('categoryImage', categoryForm.categoryImage);
+      }
+      
+      // ✅ NEW: Handle image removal for editing
+      if (isEditing && !categoryForm.categoryImage && editingCategory?.imageUrl) {
+        formData.append('removeImage', 'true');
+      }
+      
       const response = await fetch(url, {
         method: isEditing ? 'PUT' : 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          // ✅ Don't set Content-Type for FormData
         },
-        body: JSON.stringify(categoryForm)
+        body: formData // ✅ Use FormData instead of JSON
       });
 
       const data = await response.json();
       if (data.success) {
         toast.success(isEditing ? 'Category updated successfully!' : 'Category created successfully!');
-        setCategoryForm({ name: '', description: '' });
+        setCategoryForm({ name: '', description: '', categoryImage: null }); // ✅ Reset image
         setShowCategoryForm(false);
         setEditingCategory(null);
         fetchCategories();
@@ -290,11 +375,9 @@ const ProductManagement: React.FC = () => {
     }
   };
 
-  // ✅ Updated product submission with ImageKit integration
   const handleProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // ✅ Updated validation
     if (!productForm.categoryId || !productForm.name || !productForm.price || 
         productForm.uploadedImages.length === 0 || !productForm.button1.name || !productForm.button1.link) {
       toast.error('Please fill all required fields (Category, Name, Price, At least 1 Image, First Button)');
@@ -302,11 +385,9 @@ const ProductManagement: React.FC = () => {
     }
 
     try {
-      // ✅ Process uploaded images
       const imageUrls = productForm.uploadedImages.map(img => img.url);
       const imageFileIds = productForm.uploadedImages.map(img => img.fileId);
 
-      // Prepare buttons array (filter out empty buttons)
       const buttons = [productForm.button1, productForm.button2, productForm.button3]
         .filter(btn => btn.name.trim() !== '' && btn.link.trim() !== '');
 
@@ -321,12 +402,11 @@ const ProductManagement: React.FC = () => {
         description: productForm.description,
         price: parseFloat(productForm.price),
         originalPrice: productForm.originalPrice ? parseFloat(productForm.originalPrice) : null,
-        images: JSON.stringify(imageUrls), // Store ImageKit URLs as JSON
-        imageFileIds: JSON.stringify(imageFileIds), // Store file IDs for deletion
+        images: JSON.stringify(imageUrls),
+        imageFileIds: JSON.stringify(imageFileIds),
         buttons: JSON.stringify(buttons),
         tags: productForm.tags,
-        // For backward compatibility
-        imageUrl: imageUrls[0] || '', // Use first ImageKit URL
+        imageUrl: imageUrls[0] || '',
         affiliateLink: productForm.button1.link
       };
 
@@ -342,7 +422,6 @@ const ProductManagement: React.FC = () => {
       const data = await response.json();
       if (data.success) {
         toast.success(isEditing ? 'Product updated successfully!' : 'Product created successfully!');
-        // ✅ Reset form with correct structure
         setProductForm({
           categoryId: '',
           name: '',
@@ -367,7 +446,6 @@ const ProductManagement: React.FC = () => {
     }
   };
 
-  // Delete category function
   const handleDeleteCategory = async (categoryId: string, categoryName: string) => {
     if (!confirm(`Are you sure you want to delete "${categoryName}"? This will also delete all products in this category.`)) return;
     
@@ -384,7 +462,7 @@ const ProductManagement: React.FC = () => {
       if (data.success) {
         toast.success('Category deleted successfully!');
         fetchCategories();
-        fetchProducts(); // Refresh both lists
+        fetchProducts();
       } else {
         toast.error(data.error || 'Failed to delete category');
       }
@@ -394,7 +472,6 @@ const ProductManagement: React.FC = () => {
     }
   };
 
-  // Delete product function
   const handleDeleteProduct = async (productId: string, productName: string) => {
     if (!confirm(`Are you sure you want to delete "${productName}"?`)) return;
     
@@ -410,7 +487,7 @@ const ProductManagement: React.FC = () => {
       const data = await response.json();
       if (data.success) {
         toast.success('Product deleted successfully!');
-        fetchProducts(); // Refresh the products list
+        fetchProducts();
       } else {
         toast.error(data.error || 'Failed to delete product');
       }
@@ -420,28 +497,26 @@ const ProductManagement: React.FC = () => {
     }
   };
 
-  // Edit category function
+  // ✅ ENHANCED: Edit category function with image support
   const handleEditCategory = (category: Category) => {
     setEditingCategory(category);
     setCategoryForm({
       name: category.name,
-      description: category.description || ''
+      description: category.description || '',
+      categoryImage: null // ✅ Don't preload existing image
     });
     setShowCategoryForm(true);
   };
 
-  // ✅ Updated edit product function
   const handleEditProduct = (product: Product) => {
     setEditingProduct(product);
     
-    // Handle existing products with old image structure
     const existingImages: { url: string; fileId: string }[] = [];
     
-    // If product has imageUrl, add it to uploadedImages
     if (product.imageUrl) {
       existingImages.push({ 
         url: product.imageUrl, 
-        fileId: '' // Old products won't have fileId
+        fileId: ''
       });
     }
     
@@ -451,7 +526,7 @@ const ProductManagement: React.FC = () => {
       description: product.description || '',
       price: product.price.toString(),
       originalPrice: product.originalPrice?.toString() || '',
-      uploadedImages: existingImages, // ✅ Use new structure
+      uploadedImages: existingImages,
       button1: { name: 'Buy Now', link: product.affiliateLink },
       button2: { name: '', link: '' },
       button3: { name: '', link: '' },
@@ -460,14 +535,13 @@ const ProductManagement: React.FC = () => {
     setShowProductForm(true);
   };
 
-  // Cancel edit functions
+  // ✅ ENHANCED: Cancel edit functions with image reset
   const handleCancelCategoryEdit = () => {
     setEditingCategory(null);
-    setCategoryForm({ name: '', description: '' });
+    setCategoryForm({ name: '', description: '', categoryImage: null }); // ✅ Reset image
     setShowCategoryForm(false);
   };
 
-  // ✅ Updated cancel product edit function
   const handleCancelProductEdit = () => {
     setEditingProduct(null);
     setProductForm({
@@ -476,7 +550,7 @@ const ProductManagement: React.FC = () => {
       description: '',
       price: '',
       originalPrice: '',
-      uploadedImages: [], // ✅ Use new structure
+      uploadedImages: [],
       button1: { name: '', link: '' },
       button2: { name: '', link: '' },
       button3: { name: '', link: '' },
@@ -544,16 +618,18 @@ const ProductManagement: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Category Form */}
+                {/* ✅ ENHANCED: Category Form with Image Upload */}
                 {showCategoryForm && (
-                  <div className="bg-gray-50 rounded-lg p-6 mb-6 border">
-                    <h3 className="text-lg font-semibold mb-4">
-                      {editingCategory ? 'Edit Category' : 'Add New Category'}
+                  <div className="bg-gray-50 rounded-lg p-6 mb-6 border max-h-[80vh] overflow-y-auto">
+                    <h3 className="text-lg font-semibold mb-6">
+                      {editingCategory ? '🔥 Edit Fire Category' : '🔥 Add New Fire Category'}
                     </h3>
-                    <form onSubmit={handleCategorySubmit} className="space-y-4">
-                      <div>
+                    <form onSubmit={handleCategorySubmit} className="space-y-6">
+                      
+                      {/* Category Name */}
+                      <div className="bg-white rounded-lg p-4 border-l-4 border-purple-500">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Category Name *
+                          🔥 Category Name <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="text"
@@ -561,28 +637,34 @@ const ProductManagement: React.FC = () => {
                           value={categoryForm.name}
                           onChange={(e) => setCategoryForm({...categoryForm, name: e.target.value})}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-logo-purple focus:border-transparent"
-                          placeholder="Enter category name (e.g., Electronics, Fashion)"
+                          placeholder="Enter FIRE category name (e.g., Electronics, Fashion)"
                         />
                       </div>
-                      <div>
+
+                      {/* Category Description */}
+                      <div className="bg-white rounded-lg p-4 border-l-4 border-blue-500">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Description
+                          📝 Category Description
                         </label>
                         <textarea
                           value={categoryForm.description}
                           onChange={(e) => setCategoryForm({...categoryForm, description: e.target.value})}
                           rows={3}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-logo-purple focus:border-transparent"
-                          placeholder="Enter category description..."
+                          placeholder="Describe this FIRE category..."
                         />
                       </div>
-                      <div className="flex space-x-3">
-                        <button
-                          type="submit"
-                          className="bg-logo-purple text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors"
-                        >
-                          {editingCategory ? 'Update Category' : 'Create Category'}
-                        </button>
+
+                      {/* ✅ NEW: Category Image Upload */}
+                      <CategoryImageUpload
+                        selectedImage={categoryForm.categoryImage}
+                        currentImageUrl={editingCategory?.imageUrl}
+                        onImageChange={(file) => setCategoryForm({...categoryForm, categoryImage: file})}
+                        onRemoveImage={() => setCategoryForm({...categoryForm, categoryImage: null})}
+                      />
+
+                      {/* Form Actions */}
+                      <div className="flex justify-end space-x-3 pt-4 border-t">
                         <button
                           type="button"
                           onClick={handleCancelCategoryEdit}
@@ -590,15 +672,34 @@ const ProductManagement: React.FC = () => {
                         >
                           Cancel
                         </button>
+                        <button
+                          type="submit"
+                          className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-8 py-2 rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all transform hover:scale-105 font-semibold"
+                        >
+                          🔥 {editingCategory ? 'UPDATE FIRE CATEGORY' : 'CREATE FIRE CATEGORY'} 💥
+                        </button>
                       </div>
                     </form>
                   </div>
                 )}
 
-                {/* Categories List */}
+                {/* ✅ ENHANCED: Categories List with Image Display */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {categories.map((category) => (
                     <div key={category.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                      
+                      {/* ✅ NEW: Category image display */}
+                      {category.imageUrl && (
+                        <div className="mb-3">
+                          <img
+                            src={getImageForContext(category.imageUrl, 'thumbnail')}
+                            alt={category.name}
+                            className="w-full h-32 object-cover rounded-lg"
+                            loading="lazy"
+                          />
+                        </div>
+                      )}
+                      
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="font-semibold text-heading">{category.name}</h3>
                         <span className={`px-2 py-1 text-xs rounded ${
@@ -611,6 +712,7 @@ const ProductManagement: React.FC = () => {
                       <div className="flex justify-between items-center">
                         <span className="text-xs text-gray-500">
                           Created: {new Date(category.createdAt).toLocaleDateString()}
+                          {category.imageUrl && <span className="ml-2 text-green-600">📸 Has Image</span>}
                         </span>
                         <div className="flex space-x-2">
                           <button 
@@ -679,7 +781,7 @@ const ProductManagement: React.FC = () => {
                   </div>
                 )}
 
-                {/* ✅ ENHANCED PRODUCT FORM WITH IMAGEKIT INTEGRATION */}
+                {/* Product Form (unchanged from your original) */}
                 {showProductForm && categories.length > 0 && (
                   <div className="bg-gray-50 rounded-lg p-6 mb-6 border max-h-[80vh] overflow-y-auto">
                     <h3 className="text-lg font-semibold mb-6">
@@ -687,7 +789,7 @@ const ProductManagement: React.FC = () => {
                     </h3>
                     <form onSubmit={handleProductSubmit} className="space-y-6">
                       
-                      {/* 1. Category Selection */}
+                      {/* Category Selection */}
                       <div className="bg-white rounded-lg p-4 border-l-4 border-purple-500">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                           🔥 Product Category <span className="text-red-500">*</span>
@@ -707,7 +809,7 @@ const ProductManagement: React.FC = () => {
                         </select>
                       </div>
 
-                      {/* 2. Product Name */}
+                      {/* Product Name */}
                       <div className="bg-white rounded-lg p-4 border-l-4 border-orange-500">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                           💥 Product Name <span className="text-red-500">*</span>
@@ -722,7 +824,7 @@ const ProductManagement: React.FC = () => {
                         />
                       </div>
 
-                      {/* 3. Description */}
+                      {/* Description */}
                       <div className="bg-white rounded-lg p-4 border-l-4 border-blue-500">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                           📝 Product Description
@@ -736,7 +838,7 @@ const ProductManagement: React.FC = () => {
                         />
                       </div>
 
-                      {/* 4. & 5. Pricing */}
+                      {/* Pricing */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="bg-white rounded-lg p-4 border-l-4 border-green-500">
                           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -767,83 +869,82 @@ const ProductManagement: React.FC = () => {
                         </div>
                       </div>
 
-                  {/* ✅ 6. NEW IMAGEKIT UPLOAD SECTION WITH NULL CHECK */}
-                  {token && (
-                    <ImageUploadSection
-                      uploadedImages={productForm.uploadedImages}
-                      onImagesChange={(images) => setProductForm({...productForm, uploadedImages: images})}
-                      token={token}
-                    />
-                  )}
-
-                  {!token && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                      <p className="text-red-600">⚠️ Authentication required for image upload</p>
-                    </div>
-                  )}
-
-                  {/* 7. Product Buttons Section */}
-                  <div className="bg-white rounded-lg p-4 border-l-4 border-pink-500">
-                    <h4 className="text-lg font-semibold text-gray-800 mb-4">🔗 Product Buy Buttons</h4>
-                    
-                    {/* Button 1 - Mandatory */}
-                    <div className="mb-4 p-3 bg-pink-50 rounded border">
-                      <h5 className="font-medium text-gray-800 mb-3">
-                        🔥 Main Button <span className="text-red-500">* (Required)</span>
-                      </h5>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <input
-                          type="text"
-                          required
-                          value={productForm.button1.name}
-                          onChange={(e) => setProductForm({
-                            ...productForm, 
-                            button1: { ...productForm.button1, name: e.target.value }
-                          })}
-                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                          placeholder="Buy from Amazon"
+                      {/* Product Images */}
+                      {token && (
+                        <ImageUploadSection
+                          uploadedImages={productForm.uploadedImages}
+                          onImagesChange={(images) => setProductForm({...productForm, uploadedImages: images})}
+                          token={token}
                         />
-                        <input
-                          type="url"
-                          required
-                          value={productForm.button1.link}
-                          onChange={(e) => setProductForm({
-                            ...productForm, 
-                            button1: { ...productForm.button1, link: e.target.value }
-                          })}
-                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
-                          placeholder="https://amazon.in/product-link"
-                        />
-                      </div>
-                    </div>
+                      )}
 
-                    {/* Button 2 - Optional */}
-                    <div className="mb-4 p-3 bg-gray-50 rounded border">
-                      <h5 className="font-medium text-gray-800 mb-3">⚡ Second Button - Optional</h5>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <input
-                          type="text"
-                          value={productForm.button2.name}
-                          onChange={(e) => setProductForm({
-                            ...productForm, 
-                            button2: { ...productForm.button2, name: e.target.value }
-                          })}
-                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
-                          placeholder="Buy from Flipkart"
-                        />
-                        <input
-                          type="url"
-                          value={productForm.button2.link}
-                          onChange={(e) => setProductForm({
-                            ...productForm, 
-                            button2: { ...productForm.button2, link: e.target.value }
-                          })}
-                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
-                          placeholder="https://flipkart.com/product-link"
-                        />
-                      </div>
-                    </div> {/* ✅ Fixed: Proper closing tag */}
+                      {!token && (
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                          <p className="text-red-600">⚠️ Authentication required for image upload</p>
+                        </div>
+                      )}
 
+                      {/* Product Buttons */}
+                      <div className="bg-white rounded-lg p-4 border-l-4 border-pink-500">
+                        <h4 className="text-lg font-semibold text-gray-800 mb-4">🔗 Product Buy Buttons</h4>
+                        
+                        {/* Button 1 - Mandatory */}
+                        <div className="mb-4 p-3 bg-pink-50 rounded border">
+                          <h5 className="font-medium text-gray-800 mb-3">
+                            🔥 Main Button <span className="text-red-500">* (Required)</span>
+                          </h5>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <input
+                              type="text"
+                              required
+                              value={productForm.button1.name}
+                              onChange={(e) => setProductForm({
+                                ...productForm, 
+                                button1: { ...productForm.button1, name: e.target.value }
+                              })}
+                              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                              placeholder="Buy from Amazon"
+                            />
+                            <input
+                              type="url"
+                              required
+                              value={productForm.button1.link}
+                              onChange={(e) => setProductForm({
+                                ...productForm, 
+                                button1: { ...productForm.button1, link: e.target.value }
+                              })}
+                              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                              placeholder="https://amazon.in/product-link"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Button 2 - Optional */}
+                        <div className="mb-4 p-3 bg-gray-50 rounded border">
+                          <h5 className="font-medium text-gray-800 mb-3">⚡ Second Button - Optional</h5>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <input
+                              type="text"
+                              value={productForm.button2.name}
+                              onChange={(e) => setProductForm({
+                                ...productForm, 
+                                button2: { ...productForm.button2, name: e.target.value }
+                              })}
+                              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+                              placeholder="Buy from Flipkart"
+                            />
+                            <input
+                              type="url"
+                              value={productForm.button2.link}
+                              onChange={(e) => setProductForm({
+                                ...productForm, 
+                                button2: { ...productForm.button2, link: e.target.value }
+                              })}
+                              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-transparent"
+                              placeholder="https://flipkart.com/product-link"
+                            />
+                          </div>
+                        </div>
 
                         {/* Button 3 - Optional */}
                         <div className="p-3 bg-gray-50 rounded border">
@@ -873,7 +974,7 @@ const ProductManagement: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* 8. Tags */}
+                      {/* Tags */}
                       <div className="bg-white rounded-lg p-4 border-l-4 border-yellow-500">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
                           🏷️ Product Tags
@@ -928,7 +1029,7 @@ const ProductManagement: React.FC = () => {
                         </div>
                         {product.imageUrl && (
                           <img 
-                            src={getImageForContext(product.imageUrl, 'thumbnail')} // ✅ Optimized
+                            src={getImageForContext(product.imageUrl, 'thumbnail')}
                             alt={product.name}
                             className="w-16 h-16 rounded-lg object-cover ml-4"
                             loading="lazy"
