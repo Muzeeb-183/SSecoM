@@ -23,6 +23,7 @@ import UserManagement from './pages/UserManagement';
 import Analytics from './pages/Analytics';
 import ProductDetail from './pages/ProductDetail';
 import CategoryProducts from './pages/CategoryProducts';
+import SearchResults from './pages/SearchResults'; // 🔥 NEW: Search Results Page
 
 // Context Providers
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -194,6 +195,7 @@ const ConditionalHeader: React.FC = () => {
     location.pathname.startsWith(route)
   );
 
+  // 🔥 SEARCH PAGE WILL SHOW HEADER (since /search is not in hideHeaderRoutes)
   // Don't render header on product detail pages and category pages
   if (shouldHideHeader) {
     return null;
@@ -222,6 +224,9 @@ const App: React.FC = () => {
                     {/* Public Routes - Anyone can access */}
                     <Route path="/" element={<HomePage />} />
                     <Route path="/products" element={<ProductsPage />} />
+                    
+                    {/* 🔥 NEW: Search Results Route - WITH HEADER */}
+                    <Route path="/search" element={<SearchResults />} />
                     
                     {/* Category Products Route - NO HEADER */}
                     <Route path="/category/:categoryId" element={<CategoryProducts />} />
@@ -301,7 +306,16 @@ const App: React.FC = () => {
                         </RouteProtection>
                       } 
                     />
-                    <Route path="/profile" element={<ProfilePage />} />
+                    
+                    {/* 🔥 Additional Routes */}
+                    <Route 
+                      path="/profile" 
+                      element={
+                        <RouteProtection type="protected">
+                          <ProfilePage />
+                        </RouteProtection>
+                      } 
+                    />
                     
                     {/* Affiliate Marketing Routes */}
                     <Route path="/deals" element={<ProductsPage />} />

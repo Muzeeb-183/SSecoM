@@ -1818,6 +1818,219 @@ app.get('/api/admin/dashboard-summary', async (req: Request, res: Response): Pro
   }
 });
 
+// ========== SEARCH API ENDPOINT ==========
+
+// Search products and categories
+app.get('/api/search', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { q, type = 'all', limit = 20 } = req.query;
+    const query = String(q || '').trim();
+    
+    if (!query) {
+      res.status(400).json({ 
+        success: false, 
+        error: 'Search query is required' 
+      });
+      return;
+    }
+
+    console.log(`🔍 Search query: "${query}" | Type: ${type} | Limit: ${limit}`);
+    const searchStart = Date.now();
+
+    const pool = await getDbConnection();
+    
+    // Build search terms for better matching
+    const searchTerms = query.split(' ').filter(term => term.length > 0);
+    const searchPattern = `%${query}%`;
+    const exactPattern = query.toLowerCase();
+
+    let products: any[] = [];
+    let categories: any[] = [];
+
+    // Search Products (if type is 'all' or 'products')
+    if (type === 'all' || type === 'products') {
+      const productQuery = `
+        WITH ProductSearch AS (
+          SELECT 
+            p.id,
+            p.name,
+            p.description,
+            p.price,
+            p.originalPrice,
+            p.affiliateLink,
+            p.imageUrl,
+            p.tags,
+            p.createdAt,
+            c.name as categoryName,
+            c.id as categoryId,
+            -- Relevance scoring
+            CASE 
+              WHEN LOWER(p.name) = @exactPattern THEN 100
+              WHEN LOWER(p.name) LIKE '%' + @exactPattern + '%' THEN 80
+              WHEN LOWER(p.description) LIKE @searchPattern THEN 60
+              WHEN LOWER(p.tags) LIKE @searchPattern THEN 70
+              WHEN LOWER(c.name) LIKE @searchPattern THEN 50
+              ELSE 30
+            END as relevanceScore
+          FROM Products p
+          INNER JOIN Categories c ON p.categoryId = c.id
+          WHERE p.status = 'active' AND c.status = 'active'
+            AND (
+              LOWER(p.name) LIKE @searchPattern OR
+              LOWER(p.description) LIKE @searchPattern OR
+              LOWER(p.tags) LIKE @searchPattern OR
+              LOWER(c.name) LIKE @searchPattern
+            )
+        )
+        SELECT TOP ${Number(limit)} *
+        FROM ProductSearch
+        ORDER BY relevanceScore DESC, createdAt DESC
+      `;
+
+      const productResult = await pool.request()
+        .input('searchPattern', sql.NVarChar, searchPattern)
+        .input('exactPattern', sql.NVarChar, exactPattern)
+        .query(productQuery);
+      
+      products = productResult.recordset;
+    }
+
+    // Search Categories (if type is 'all' or 'categories')
+    if (type === 'all' || type === 'categories') {
+      const categoryQuery = `
+        WITH CategorySearch AS (
+          SELECT 
+            c.id,
+            c.name,
+            c.description,
+            c.slug,
+            c.imageUrl,
+            COUNT(p.id) as productCount,
+            -- Relevance scoring
+            CASE 
+              WHEN LOWER(c.name) = @exactPattern THEN 100
+              WHEN LOWER(c.name) LIKE '%' + @exactPattern + '%' THEN 80
+              WHEN LOWER(c.description) LIKE @searchPattern THEN 60
+              ELSE 30
+            END as relevanceScore
+          FROM Categories c
+          LEFT JOIN Products p ON c.id = p.categoryId AND p.status = 'active'
+          WHERE c.status = 'active'
+            AND (
+              LOWER(c.name) LIKE @searchPattern OR
+              LOWER(c.description) LIKE @searchPattern
+            )
+          GROUP BY c.id, c.name, c.description, c.slug, c.imageUrl
+        )
+        SELECT TOP ${Math.floor(Number(limit) / 2)} *
+        FROM CategorySearch
+        ORDER BY relevanceScore DESC, name ASC
+      `;
+
+      const categoryResult = await pool.request()
+        .input('searchPattern', sql.NVarChar, searchPattern)
+        .input('exactPattern', sql.NVarChar, exactPattern)
+        .query(categoryQuery);
+      
+      categories = categoryResult.recordset;
+    }
+
+    const searchTime = Date.now() - searchStart;
+    const totalResults = products.length + categories.length;
+
+    // Generate search suggestions if no results
+    let suggestions: string[] = [];
+    if (totalResults === 0) {
+      const suggestionQuery = `
+        SELECT DISTINCT TOP 5 name as suggestion
+        FROM (
+          SELECT name FROM Products WHERE status = 'active'
+          UNION
+          SELECT name FROM Categories WHERE status = 'active'
+        ) as AllNames
+        WHERE LOWER(name) LIKE '%${query.slice(0, 3)}%'
+        ORDER BY name
+      `;
+      
+      try {
+        const suggestionResult = await pool.request().query(suggestionQuery);
+        suggestions = suggestionResult.recordset.map(row => row.suggestion);
+      } catch (suggestionError) {
+        console.warn('⚠️ Failed to generate suggestions:', suggestionError);
+      }
+    }
+
+    console.log(`✅ Search completed: ${totalResults} results in ${searchTime}ms`);
+    console.log(`📊 Products: ${products.length}, Categories: ${categories.length}`);
+
+    res.json({
+      success: true,
+      results: {
+        products,
+        categories,
+        totalResults,
+        searchTime
+      },
+      query,
+      suggestions: suggestions.length > 0 ? suggestions : undefined
+    });
+
+  } catch (error) {
+    console.error('❌ Search API error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Search failed. Please try again.' 
+    });
+  }
+});
+
+// Quick search suggestions endpoint (for autocomplete)
+app.get('/api/search/suggestions', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { q } = req.query;
+    const query = String(q || '').trim();
+    
+    if (!query || query.length < 2) {
+      res.json({ success: true, suggestions: [] });
+      return;
+    }
+
+    const pool = await getDbConnection();
+    const searchPattern = `%${query}%`;
+
+    const suggestionQuery = `
+      SELECT DISTINCT TOP 8 suggestion, type FROM (
+        SELECT name as suggestion, 'product' as type, 
+               CASE WHEN LOWER(name) LIKE '${query.toLowerCase()}%' THEN 1 ELSE 2 END as priority
+        FROM Products 
+        WHERE status = 'active' AND LOWER(name) LIKE @searchPattern
+        
+        UNION
+        
+        SELECT name as suggestion, 'category' as type,
+               CASE WHEN LOWER(name) LIKE '${query.toLowerCase()}%' THEN 1 ELSE 2 END as priority
+        FROM Categories 
+        WHERE status = 'active' AND LOWER(name) LIKE @searchPattern
+      ) as AllSuggestions
+      ORDER BY priority, suggestion
+    `;
+
+    const result = await pool.request()
+      .input('searchPattern', sql.NVarChar, searchPattern)
+      .query(suggestionQuery);
+
+    res.json({
+      success: true,
+      suggestions: result.recordset
+    });
+
+  } catch (error) {
+    console.error('❌ Search suggestions error:', error);
+    res.json({ success: true, suggestions: [] });
+  }
+});
+
+
 
 // ========== PROFILE PICTURE UPLOAD ENDPOINT ==========
 
