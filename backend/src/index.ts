@@ -2163,6 +2163,391 @@ app.put('/api/users/profile-picture', profileUpload.single('profilePicture'), as
   }
 });
 
+// ========== BANNER MANAGEMENT ENDPOINTS ==========
+
+// Get active banners for homepage (public endpoint)
+app.get('/api/banners', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const pool = await getDbConnection();
+    const result = await pool.request()
+      .query(`
+        SELECT 
+          id, title, description, imageUrl, ctaText, ctaLink, priority
+        FROM Banners 
+        WHERE isActive = 1 
+        ORDER BY priority DESC, createdAt DESC
+      `);
+
+    console.log(`✅ Active banners fetched: ${result.recordset.length} banners`);
+    res.json({ 
+      success: true, 
+      banners: result.recordset 
+    });
+
+  } catch (error) {
+    console.error('❌ Get banners error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch banners' 
+    });
+  }
+});
+
+// Get all banners for admin (admin only)
+app.get('/api/admin/banners', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Authorization required' });
+      return;
+    }
+
+    const token = extractTokenFromHeader(authHeader);
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Invalid authorization header' });
+      return;
+    }
+
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') {
+      res.status(403).json({ success: false, error: 'Admin access required' });
+      return;
+    }
+
+    const pool = await getDbConnection();
+    const result = await pool.request()
+      .query(`
+        SELECT 
+          id, title, description, imageUrl, imageFileId, 
+          ctaText, ctaLink, priority, isActive, createdAt, updatedAt
+        FROM Banners 
+        ORDER BY priority DESC, createdAt DESC
+      `);
+
+    console.log(`✅ Admin banners fetched: ${result.recordset.length} banners`);
+    res.json({ 
+      success: true, 
+      banners: result.recordset 
+    });
+
+  } catch (error) {
+    console.error('❌ Get admin banners error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to fetch banners' 
+    });
+  }
+});
+
+// Create banner with image upload (admin only)
+app.post('/api/admin/banners', upload.single('bannerImage'), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { title, description, ctaText, ctaLink, priority = 0 } = req.body;
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Authorization required' });
+      return;
+    }
+
+    const token = extractTokenFromHeader(authHeader);
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Invalid authorization header' });
+      return;
+    }
+
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') {
+      res.status(403).json({ success: false, error: 'Admin access required' });
+      return;
+    }
+
+    if (!title) {
+      res.status(400).json({ success: false, error: 'Banner title is required' });
+      return;
+    }
+
+    // Handle optional image upload
+    let imageUrl = null;
+    let imageFileId = null;
+
+    if (req.file) {
+      try {
+        console.log(`📸 Uploading banner image: ${title}`);
+        const fileName = `banner_${Date.now()}_${title.toLowerCase().replace(/\s+/g, '_')}`;
+        
+        const uploadResult = await uploadImage(req.file, fileName, 'banners');
+        imageUrl = uploadResult.url;
+        imageFileId = uploadResult.fileId;
+        
+        console.log(`✅ Banner image uploaded: ${uploadResult.url}`);
+      } catch (uploadError) {
+        console.error('❌ Banner image upload failed:', uploadError);
+        res.status(500).json({ success: false, error: 'Failed to upload banner image' });
+        return;
+      }
+    }
+
+    const pool = await getDbConnection();
+    const result = await pool.request()
+      .input('title', sql.NVarChar(255), title)
+      .input('description', sql.NVarChar(500), description || '')
+      .input('imageUrl', sql.NVarChar(sql.MAX), imageUrl)
+      .input('imageFileId', sql.NVarChar(sql.MAX), imageFileId)
+      .input('ctaText', sql.NVarChar(100), ctaText || null)
+      .input('ctaLink', sql.NVarChar(500), ctaLink || null)
+      .input('priority', sql.Int, parseInt(priority) || 0)
+      .query(`
+        INSERT INTO Banners (title, description, imageUrl, imageFileId, ctaText, ctaLink, priority)
+        OUTPUT INSERTED.id, INSERTED.title, INSERTED.createdAt
+        VALUES (@title, @description, @imageUrl, @imageFileId, @ctaText, @ctaLink, @priority)
+      `);
+
+    console.log('✅ Banner created:', title, imageUrl ? 'with image' : 'without image');
+    res.json({ 
+      success: true, 
+      message: 'Banner created successfully',
+      banner: result.recordset[0]
+    });
+
+  } catch (error) {
+    console.error('❌ Create banner error:', error);
+    res.status(500).json({ success: false, error: 'Failed to create banner' });
+  }
+});
+
+// Delete banner (admin only)
+app.delete('/api/admin/banners/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Authorization required' });
+      return;
+    }
+
+    const token = extractTokenFromHeader(authHeader);
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Invalid authorization header' });
+      return;
+    }
+
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') {
+      res.status(403).json({ success: false, error: 'Admin access required' });
+      return;
+    }
+
+    const pool = await getDbConnection();
+    
+    // Get banner image info before deletion
+    const bannerResult = await pool.request()
+      .input('id', sql.NVarChar(50), id)
+      .query('SELECT title, imageFileId FROM Banners WHERE id = @id');
+
+    if (bannerResult.recordset.length === 0) {
+      res.status(404).json({ success: false, error: 'Banner not found' });
+      return;
+    }
+
+    const banner = bannerResult.recordset[0];
+
+    // Delete banner image from ImageKit if it exists
+    if (banner.imageFileId) {
+      try {
+        await deleteImage(banner.imageFileId);
+        console.log(`🗑️ Deleted banner image: ${banner.imageFileId}`);
+      } catch (deleteError) {
+        console.warn('⚠️ Failed to delete banner image:', deleteError);
+      }
+    }
+    
+    // Delete banner from database
+    const result = await pool.request()
+      .input('id', sql.NVarChar(50), id)
+      .query('DELETE FROM Banners WHERE id = @id');
+
+    console.log('✅ Banner deleted:', banner.title);
+    res.json({ success: true, message: 'Banner and associated image deleted successfully' });
+
+  } catch (error) {
+    console.error('❌ Delete banner error:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete banner' });
+  }
+});
+
+// Toggle banner status (admin only)
+app.patch('/api/admin/banners/:id/toggle', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Authorization required' });
+      return;
+    }
+
+    const token = extractTokenFromHeader(authHeader);
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Invalid authorization header' });
+      return;
+    }
+
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') {
+      res.status(403).json({ success: false, error: 'Admin access required' });
+      return;
+    }
+
+    const pool = await getDbConnection();
+    
+    // Toggle the isActive status
+    const result = await pool.request()
+      .input('id', sql.NVarChar(50), id)
+      .query(`
+        UPDATE Banners 
+        SET isActive = CASE WHEN isActive = 1 THEN 0 ELSE 1 END,
+            updatedAt = GETDATE()
+        OUTPUT INSERTED.isActive, INSERTED.title
+        WHERE id = @id
+      `);
+
+    if (result.recordset.length === 0) {
+      res.status(404).json({ success: false, error: 'Banner not found' });
+      return;
+    }
+
+    const updated = result.recordset[0];
+    console.log(`✅ Banner status toggled: ${updated.title} -> ${updated.isActive ? 'Active' : 'Inactive'}`);
+    
+    res.json({ 
+      success: true, 
+      message: `Banner ${updated.isActive ? 'activated' : 'deactivated'} successfully`,
+      isActive: updated.isActive
+    });
+
+  } catch (error) {
+    console.error('❌ Toggle banner status error:', error);
+    res.status(500).json({ success: false, error: 'Failed to toggle banner status' });
+  }
+});
+
+// Update banner (admin only)
+app.put('/api/admin/banners/:id', upload.single('bannerImage'), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { title, description, ctaText, ctaLink, priority, isActive, removeImage } = req.body;
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ success: false, error: 'Authorization required' });
+      return;
+    }
+
+    const token = extractTokenFromHeader(authHeader);
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Invalid authorization header' });
+      return;
+    }
+
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') {
+      res.status(403).json({ success: false, error: 'Admin access required' });
+      return;
+    }
+
+    if (!title) {
+      res.status(400).json({ success: false, error: 'Banner title is required' });
+      return;
+    }
+
+    const pool = await getDbConnection();
+
+    // Get existing banner
+    const existingBanner = await pool.request()
+      .input('id', sql.NVarChar(50), id)
+      .query('SELECT imageUrl, imageFileId FROM Banners WHERE id = @id');
+
+    if (existingBanner.recordset.length === 0) {
+      res.status(404).json({ success: false, error: 'Banner not found' });
+      return;
+    }
+
+    const existing = existingBanner.recordset[0];
+    let newImageUrl = existing.imageUrl;
+    let newImageFileId = existing.imageFileId;
+
+    // Handle image removal
+    if (removeImage === 'true' && existing.imageFileId) {
+      try {
+        await deleteImage(existing.imageFileId);
+        console.log(`🗑️ Deleted old banner image: ${existing.imageFileId}`);
+      } catch (deleteError) {
+        console.warn('⚠️ Failed to delete old banner image:', deleteError);
+      }
+      newImageUrl = null;
+      newImageFileId = null;
+    }
+
+    // Handle new image upload
+    if (req.file) {
+      // Delete old image if it exists
+      if (existing.imageFileId) {
+        try {
+          await deleteImage(existing.imageFileId);
+          console.log(`🗑️ Replaced old banner image: ${existing.imageFileId}`);
+        } catch (deleteError) {
+          console.warn('⚠️ Failed to delete old banner image:', deleteError);
+        }
+      }
+
+      try {
+        console.log(`📸 Uploading new banner image: ${title}`);
+        const fileName = `banner_${Date.now()}_${title.toLowerCase().replace(/\s+/g, '_')}`;
+        
+        const uploadResult = await uploadImage(req.file, fileName, 'banners');
+        newImageUrl = uploadResult.url;
+        newImageFileId = uploadResult.fileId;
+        
+        console.log(`✅ New banner image uploaded: ${uploadResult.url}`);
+      } catch (uploadError) {
+        console.error('❌ New banner image upload failed:', uploadError);
+        res.status(500).json({ success: false, error: 'Failed to upload new banner image' });
+        return;
+      }
+    }
+
+    // Update banner
+    const result = await pool.request()
+      .input('id', sql.NVarChar(50), id)
+      .input('title', sql.NVarChar(255), title)
+      .input('description', sql.NVarChar(500), description || '')
+      .input('imageUrl', sql.NVarChar(sql.MAX), newImageUrl)
+      .input('imageFileId', sql.NVarChar(sql.MAX), newImageFileId)
+      .input('ctaText', sql.NVarChar(100), ctaText || null)
+      .input('ctaLink', sql.NVarChar(500), ctaLink || null)
+      .input('priority', sql.Int, parseInt(priority) || 0)
+      .input('isActive', sql.Bit, isActive === 'true' ? 1 : 0)
+      .query(`
+        UPDATE Banners 
+        SET title = @title, description = @description, imageUrl = @imageUrl, 
+            imageFileId = @imageFileId, ctaText = @ctaText, ctaLink = @ctaLink,
+            priority = @priority, isActive = @isActive, updatedAt = GETDATE()
+        WHERE id = @id
+      `);
+
+    console.log('✅ Banner updated:', title);
+    res.json({ success: true, message: 'Banner updated successfully' });
+
+  } catch (error) {
+    console.error('❌ Update banner error:', error);
+    res.status(500).json({ success: false, error: 'Failed to update banner' });
+  }
+});
+
+
+
 
 // Start server
 app.listen(PORT, (): void => {

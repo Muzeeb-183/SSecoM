@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { getImageForContext, ImageContext } from '../utils/imageOptimization';
 import RecentlyViewed from '../components/RecentlyViewed';
+import BannerSlider from '../components/BannerSlider'; // ✅ NEW: Import BannerSlider
 
 // ✅ UPDATED: Category interface with imageUrl field
 interface Category {
@@ -299,6 +300,9 @@ const HomePage: React.FC = memo(() => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-red-900">
       <div className="container mx-auto px-4 py-8">
+        
+        {/* ✅ NEW: Banner Slider - Right at the top of the page */}
+        <BannerSlider className="mb-12" />
         
         <RecentlyViewed />
         

@@ -1,4 +1,4 @@
-// Update your AdminPanel.tsx
+// AdminPanel.tsx
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
@@ -165,6 +165,22 @@ const AdminPanel: React.FC = () => {
             </button>
           </div>
 
+          {/* 🔥 Banner Management */}
+          <div className="bg-white rounded-xl p-6 shadow-lg">
+            <h3 className="text-xl font-bold text-heading mb-4 flex items-center">
+              🔥 Banner Management
+            </h3>
+            <p className="text-subheading mb-4">
+              Create and manage promotional banners for homepage.
+            </p>
+            <button 
+              onClick={() => window.location.href = '/admin/banners'}
+              className="w-full bg-orange-600 text-white py-3 rounded-lg hover:bg-orange-700 transition-colors"
+            >
+              Manage Banners
+            </button>
+          </div>
+
           {/* Analytics */}
           <div className="bg-white rounded-xl p-6 shadow-lg">
             <h3 className="text-xl font-bold text-heading mb-4 flex items-center">
@@ -229,14 +245,19 @@ const AdminPanel: React.FC = () => {
           <h3 className="text-xl font-bold text-heading mb-4">Recent Activity</h3>
           <div className="space-y-3">
             <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+              <span className="text-orange-600 mr-3">🔥</span>
+              <span className="text-subheading">Banner management system activated</span>
+              <span className="ml-auto text-xs text-gray-500">Just now</span>
+            </div>
+            <div className="flex items-center p-3 bg-gray-50 rounded-lg">
               <span className="text-green-600 mr-3">✅</span>
               <span className="text-subheading">Real analytics system activated</span>
-              <span className="ml-auto text-xs text-gray-500">Just now</span>
+              <span className="ml-auto text-xs text-gray-500">5 minutes ago</span>
             </div>
             <div className="flex items-center p-3 bg-gray-50 rounded-lg">
               <span className="text-blue-600 mr-3">🛍️</span>
               <span className="text-subheading">Product management system updated</span>
-              <span className="ml-auto text-xs text-gray-500">5 minutes ago</span>
+              <span className="ml-auto text-xs text-gray-500">10 minutes ago</span>
             </div>
             <div className="flex items-center p-3 bg-gray-50 rounded-lg">
               <span className="text-purple-600 mr-3">👥</span>

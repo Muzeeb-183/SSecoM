@@ -29,6 +29,7 @@ import SearchResults from './pages/SearchResults'; // 🔥 NEW: Search Results P
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { ThemeProvider } from './context/ThemeProvider';
+import BannerManagement from './pages/BannerManagement';
 
 // ✅ Enhanced loading component with fire theme
 const LoadingSpinner: React.FC<{ message?: string; subtitle?: string }> = ({ 
@@ -306,6 +307,8 @@ const App: React.FC = () => {
                         </RouteProtection>
                       } 
                     />
+                    <Route path="/admin/banners" element={<BannerManagement />} />
+
                     
                     {/* 🔥 Additional Routes */}
                     <Route 

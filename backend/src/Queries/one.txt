@@ -111,3 +111,38 @@ ADD imageUrl NVARCHAR(500);
 
 -- Update the column to allow NULL initially for existing categories
 -- Existing categories will use emoji fallbacks until images are added
+
+
+-- Create Banners table for SSecoM Banner Management System
+CREATE TABLE Banners (
+    id NVARCHAR(50) PRIMARY KEY DEFAULT NEWID(),
+    title NVARCHAR(255) NOT NULL,
+    description NVARCHAR(500),
+    imageUrl NVARCHAR(MAX), -- ImageKit URL for banner image
+    imageFileId NVARCHAR(MAX), -- ImageKit file ID for deletion
+    ctaText NVARCHAR(100), -- Call-to-action button text (optional)
+    ctaLink NVARCHAR(500), -- CTA button link URL (optional)
+    priority INT DEFAULT 0, -- Display order (higher = shows first)
+    isActive BIT DEFAULT 1, -- Active/Inactive status
+    createdAt DATETIME DEFAULT GETDATE(),
+    updatedAt DATETIME DEFAULT GETDATE()
+);
+
+-- Create indexes for better performance
+CREATE INDEX IX_Banners_Priority ON Banners(priority DESC);
+CREATE INDEX IX_Banners_Active ON Banners(isActive);
+CREATE INDEX IX_Banners_Created ON Banners(createdAt DESC);
+
+-- Insert a sample banner for testing (optional)
+INSERT INTO Banners (title, description, ctaText, ctaLink, priority, isActive)
+VALUES 
+('🔥 Welcome to Student Store ecoM!', 'Discover amazing student deals and save money on everything you need!', 'Shop Now', '/', 100, 1);
+
+-- Verify table creation
+SELECT * FROM Banners;
+
+-- Check table structure
+SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
+FROM INFORMATION_SCHEMA.COLUMNS 
+WHERE TABLE_NAME = 'Banners'
+ORDER BY ORDINAL_POSITION;
