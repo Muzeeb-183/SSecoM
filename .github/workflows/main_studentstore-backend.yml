@@ -30,28 +30,28 @@ jobs:
           path: backend                     # <--- UPLOAD /backend ONLY
 
   deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v4
-        with:
-          name: node-app
-          path: backend     # <--- Download to backend if needed
-
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_595F6E50C79A49539F8D76D9BC93AFDA }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_0A684DDCD4014986AE02A4141295A21C }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_62BB34B9B8DA429A9CF5AA0917D705C0 }}
-      - name: 'Deploy to Azure Web App'
-        id: deploy-to-webapp
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: 'studentstore-backend'
-          slot-name: 'Production'
-          package: backend                  # <--- DEPLOY THE /backend FOLDER
+      runs-on: ubuntu-latest
+      needs: build
+      permissions:
+        id-token: write
+        contents: read
+      steps:
+        - name: Download artifact from build job
+          uses: actions/download-artifact@v4
+          with:
+            name: node-app
+            path: .      # <--- CORRECT
+        
+        - name: Login to Azure
+          uses: azure/login@v2
+          with:
+            client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_595F6E50C79A49539F8D76D9BC93AFDA }}
+            tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_0A684DDCD4014986AE02A4141295A21C }}
+            subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_62BB34B9B8DA429A9CF5AA0917D705C0 }}
+        - name: 'Deploy to Azure Web App'
+          id: deploy-to-webapp
+          uses: azure/webapps-deploy@v3
+          with:
+            app-name: 'studentstore-backend'
+            slot-name: 'Production'
+            package: backend   # keep as is
