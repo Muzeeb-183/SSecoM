@@ -26,6 +26,10 @@ jobs:
           npm run build --if-present
           npm run test --if-present
 
+      - name: List backend/ before upload
+        run: ls -lhR
+        working-directory: backend
+
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
@@ -44,6 +48,9 @@ jobs:
         with:
           name: node-app
           path: .
+
+      - name: List workspace contents after artifact download
+        run: ls -lhR
 
       - name: Login to Azure
         uses: azure/login@v2
