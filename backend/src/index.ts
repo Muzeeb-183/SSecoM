@@ -46,13 +46,32 @@ app.use(helmet());
 //   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
 //   credentials: true
 // }));
+
+// 1st update index.ts
+
+// const allowedOrigins = (process.env.FRONTEND_URL || '').split(',');
+
+// app.use(cors({
+//   origin: function (origin, callback) {
+//     // Allow requests with no origin (like mobile apps, curl, etc.)
+//     if (!origin) return callback(null, true);
+//     if (allowedOrigins.indexOf(origin) !== -1) {
+//       return callback(null, true);
+//     } else {
+//       return callback(new Error('Not allowed by CORS'));
+//     }
+//   },
+//   credentials: true
+// }));
+
+//2nd update index.ts
 const allowedOrigins = (process.env.FRONTEND_URL || '').split(',');
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, etc.)
+    // Allow requests with no origin (like curl or mobile apps)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     } else {
       return callback(new Error('Not allowed by CORS'));
@@ -60,6 +79,7 @@ app.use(cors({
   },
   credentials: true
 }));
+
 
 app.use(morgan('combined'));
 app.use(express.json());
