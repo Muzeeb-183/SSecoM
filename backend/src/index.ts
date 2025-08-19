@@ -65,21 +65,34 @@ app.use(helmet());
 // }));
 
 //2nd update index.ts
+// const allowedOrigins = (process.env.FRONTEND_URL || '').split(',');
+
+// app.use(cors({
+//   origin: function (origin, callback) {
+//     // Allow requests with no origin (like curl or mobile apps)
+//     if (!origin) return callback(null, true);
+//     if (allowedOrigins.includes(origin)) {
+//       return callback(null, true);
+//     } else {
+//       return callback(new Error('Not allowed by CORS'));
+//     }
+//   },
+//   credentials: true
+// }));
+
+//3rd update index.ts after vercel deployment
 const allowedOrigins = (process.env.FRONTEND_URL || '').split(',');
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like curl or mobile apps)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
-    } else {
-      return callback(new Error('Not allowed by CORS'));
     }
+    return callback(new Error('Not allowed by CORS'));
   },
   credentials: true
 }));
-
 
 app.use(morgan('combined'));
 app.use(express.json());
